@@ -1,0 +1,118 @@
+.editTaskPage {
+  display: grid;
+  place-items: start center;
+  padding: 24px 16px;
+}
+
+.editTaskCard {
+  width: min(920px, 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.22);
+}
+
+.editTaskTitle {
+  margin: 0 0 14px;
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.langGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.langSection {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  min-width: 0;
+}
+
+.langSection__title {
+  margin: 0 0 10px;
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.field__label {
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.field__input,
+.field__textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.12);
+  color: inherit;
+  padding: 10px 12px;
+  outline: none;
+  resize: vertical;
+}
+
+.field__textarea {
+  min-height: 140px;
+}
+
+.field__input:focus,
+.field__textarea:focus {
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.18);
+}
+
+.actionsRow {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.primaryBtn {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    radial-gradient(120% 180% at 20% 0%, rgba(124, 58, 237, 0.45), transparent 60%),
+    radial-gradient(120% 180% at 90% 10%, rgba(6, 182, 212, 0.35), transparent 62%),
+    rgba(255, 255, 255, 0.045);
+  color: inherit;
+  padding: 12px 14px;
+  cursor: pointer;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+}
+
+.primaryBtn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.22);
+  filter: brightness(1.05);
+}
+
+.secondaryLink {
+  color: inherit;
+  text-decoration: none;
+  opacity: 0.9;
+}
+
+.secondaryLink:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+@media (max-width: 860px) {
+  .langGrid {
+    grid-template-columns: 1fr;
+  }
+}
+

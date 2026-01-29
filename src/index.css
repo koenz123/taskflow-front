@@ -1,0 +1,168 @@
+:root {
+  /* Typography */
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    Helvetica,
+    Arial,
+    "Apple Color Emoji",
+    "Segoe UI Emoji";
+  line-height: 1.45;
+  font-weight: 450;
+
+  /* Theme */
+  color-scheme: dark;
+  --bg0: #060814;
+  --bg1: #0b1020;
+  --card: rgba(255, 255, 255, 0.055);
+  --card2: rgba(255, 255, 255, 0.035);
+  --border: rgba(255, 255, 255, 0.12);
+  --border2: rgba(255, 255, 255, 0.08);
+  --text: rgba(255, 255, 255, 0.92);
+  --muted: rgba(255, 255, 255, 0.7);
+  --muted2: rgba(255, 255, 255, 0.55);
+  --accent: #7c3aed; /* violet */
+  --accent2: #06b6d4; /* cyan */
+  --danger: #ef4444;
+  --ring: rgba(124, 58, 237, 0.55);
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+
+  --shadow-sm: 0 10px 30px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 16px 45px rgba(0, 0, 0, 0.35);
+
+  color: var(--text);
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  /* Prevent layout shift when page scrollbar appears/disappears */
+  scrollbar-gutter: stable;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--bg1);
+  /* Make background layers stable across browser zoom */
+  isolation: isolate;
+  position: relative;
+  /* Fallback for browsers without scrollbar-gutter support */
+  overflow-y: scroll;
+}
+
+/* Viewport-fixed gradient layer (prevents “jumping” on zoom) */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  transform: translateZ(0);
+  background:
+    /* Base depth */
+    linear-gradient(180deg, #060814 0%, #070a18 35%, #0b1020 100%),
+    /* Aurora wash */
+    radial-gradient(900px 520px at 50% 18%, rgba(99, 102, 241, 0.14), transparent 62%),
+    radial-gradient(980px 700px at 15% 0%, rgba(124, 58, 237, 0.28), transparent 58%),
+    radial-gradient(920px 680px at 85% 10%, rgba(6, 182, 212, 0.22), transparent 58%),
+    /* Smooth bottom glow (avoid dark band near footer) */
+    radial-gradient(1600px 620px at 50% 100%, rgba(99, 102, 241, 0.18), transparent 74%),
+    radial-gradient(1600px 560px at 35% 100%, rgba(124, 58, 237, 0.12), transparent 74%),
+    radial-gradient(1600px 560px at 65% 100%, rgba(6, 182, 212, 0.1), transparent 74%);
+  background-repeat: no-repeat;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.02;
+  z-index: 1;
+  /* Avoid structured lines that can form visible bands on zoom */
+  background-image: radial-gradient(800px 500px at 50% 0%, rgba(255, 255, 255, 0.08), transparent 60%);
+}
+
+#root {
+  min-height: 100vh;
+  position: relative;
+  z-index: 2;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.35);
+  text-underline-offset: 3px;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(124, 58, 237, 0.35);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Shared interactive styles */
+.header__button,
+.primaryBtn,
+.submitBtn,
+.primaryLink,
+.lang__btn,
+.notif__btn,
+.roleBtn {
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease,
+    opacity 140ms ease,
+    filter 140ms ease;
+}
+
+.header__button:active,
+.primaryBtn:active,
+.submitBtn:active,
+.primaryLink:active,
+.lang__btn:active,
+.notif__btn:active,
+.roleBtn:active {
+  transform: translateY(1px);
+}
+
+.primaryBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
