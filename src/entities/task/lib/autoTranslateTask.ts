@@ -3,7 +3,7 @@ import type { TranslateLocale } from '@/shared/i18n/translate'
 import { guessLocale, translateText } from '@/shared/i18n/translate'
 import { taskRepo } from './taskRepo'
 
-type Field = 'title' | 'shortDescription' | 'description'
+type Field = 'title' | 'shortDescription' | 'requirements' | 'description'
 
 function otherLocale(locale: TranslateLocale): TranslateLocale {
   return locale === 'ru' ? 'en' : 'ru'
@@ -34,7 +34,7 @@ async function translateField(taskId: string, field: Field, text: LocalizedText)
     const translated = await translateText(sourceText, source, target)
     taskRepo.update(taskId, (prev) => {
       const current = prev[field]
-      if (!needsTranslation(current)) return prev
+      if (!current || !needsTranslation(current)) return prev
       return {
         ...prev,
         [field]: source === 'ru' ? { ru: sourceText, en: translated } : { en: sourceText, ru: translated },
@@ -47,10 +47,14 @@ async function translateField(taskId: string, field: Field, text: LocalizedText)
 
 export async function autoTranslateIfNeeded(
   taskId: string,
-  fields: Pick<Record<Field, LocalizedText>, 'title' | 'shortDescription'> & Partial<Record<'description', LocalizedText>>,
+  fields: Pick<Record<Field, LocalizedText>, 'title' | 'shortDescription'> &
+    Partial<Record<'requirements' | 'description', LocalizedText>>,
 ) {
   if (needsTranslation(fields.title)) await translateField(taskId, 'title', fields.title)
   if (needsTranslation(fields.shortDescription)) await translateField(taskId, 'shortDescription', fields.shortDescription)
+  if (fields.requirements && needsTranslation(fields.requirements)) {
+    await translateField(taskId, 'requirements', fields.requirements)
+  }
   if (fields.description && needsTranslation(fields.description)) await translateField(taskId, 'description', fields.description)
 }
 

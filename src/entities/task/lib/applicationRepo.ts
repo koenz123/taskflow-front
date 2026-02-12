@@ -69,23 +69,47 @@ export const applicationRepo = {
     return updated
   },
 
-  select(applicationId: string): TaskApplication | null {
+  select(
+    applicationId: string,
+    meta?: { contractId?: string },
+  ): { selected: TaskApplication | null; rejected: TaskApplication[] } {
     const all = readAll()
-    const target = all.find((app) => app.id === applicationId)
-    if (!target) return null
+    const idx = all.findIndex((app) => app.id === applicationId)
     const now = new Date().toISOString()
-    const updated: TaskApplication[] = all.map((app) => {
-      if (app.taskId !== target.taskId) return app
-      if (app.id === applicationId) return { ...app, status: 'selected' as TaskApplication['status'], updatedAt: now }
-      if (app.status === 'pending') return { ...app, status: 'rejected' as TaskApplication['status'], updatedAt: now }
-      return app
-    })
+    if (idx === -1) return { selected: null, rejected: [] }
+    const updated = all.slice()
+    const selected = {
+      ...updated[idx],
+      status: 'selected' as TaskApplication['status'],
+      contractId: meta?.contractId ?? updated[idx].contractId,
+      updatedAt: now,
+    }
+    updated[idx] = selected
     writeAll(updated)
-    return updated.find((app) => app.id === applicationId) ?? null
+    return { selected, rejected: [] }
+  },
+
+  linkContract(applicationId: string, contractId: string) {
+    const now = new Date().toISOString()
+    const all = readAll()
+    const idx = all.findIndex((app) => app.id === applicationId)
+    if (idx === -1) return null
+    const updated = { ...all[idx], contractId, updatedAt: now }
+    all[idx] = updated
+    writeAll(all)
+    return updated
   },
 
   reject(applicationId: string) {
     return this.updateStatus(applicationId, 'rejected')
+  },
+
+  deleteForTask(taskId: string) {
+    const all = readAll()
+    const next = all.filter((app) => app.taskId !== taskId)
+    if (next.length === all.length) return false
+    writeAll(next)
+    return true
   },
 
   subscribe(callback: () => void) {

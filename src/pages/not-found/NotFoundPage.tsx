@@ -10,7 +10,7 @@ export function NotFoundPage() {
       <h1>404</h1>
       <p>{t('notFound.title')}</p>
       <p>
-        <Link to={paths.home}>{t('common.backHome')}</Link>
+        <Link to={paths.tasks}>{t('common.backHome')}</Link>
       </p>
     </main>
   )

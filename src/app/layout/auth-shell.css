@@ -1,0 +1,140 @@
+.authShell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg0);
+}
+
+.authShell__topbar {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--container-pad-x);
+  border-bottom: 1px solid var(--header-border);
+  background: var(--header-bg);
+}
+
+.authShell__brand {
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+.authShell__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.authShell__lang {
+  display: inline-flex;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  background: var(--surface1);
+}
+
+.authShell__langBtn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+}
+
+.authShell__langBtn--active {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.authShell__themeBtn {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+
+.authShell__themeBtn:hover {
+  border-color: var(--border3);
+  background: var(--surface2);
+}
+
+.authShell__home {
+  font-size: 12px;
+  font-weight: 750;
+  opacity: 0.9;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  padding: 7px 10px;
+  background: var(--surface1);
+}
+
+.authShell__home:hover {
+  opacity: 1;
+  border-color: var(--border3);
+}
+
+.authShell__body {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: var(--container-pad-y) var(--container-pad-x);
+}
+
+.authShell__container {
+  width: min(520px, 100%);
+}
+
+@media (max-width: 520px) {
+  .authShell__topbar {
+    padding: 0 var(--container-pad-x);
+  }
+}
+
+@media (max-width: 420px) {
+  .authShell__topbar {
+    height: auto;
+    padding: 10px var(--container-pad-x);
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .authShell__actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+@media (pointer: coarse) {
+  .authShell__themeBtn {
+    width: var(--tap);
+    height: var(--tap);
+  }
+
+  .authShell__langBtn,
+  .authShell__home {
+    min-height: var(--tap);
+    padding: 0 12px;
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
+@media (hover: none) {
+  .authShell__themeBtn:hover,
+  .authShell__home:hover {
+    background: var(--surface1);
+    border-color: var(--border);
+    opacity: 0.9;
+  }
+}
+

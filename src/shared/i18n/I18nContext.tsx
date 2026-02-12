@@ -4,7 +4,7 @@ import type { Locale, TranslationKey } from './translations'
 export type I18nApi = {
   locale: Locale
   setLocale: (locale: Locale) => void
-  t: (key: TranslationKey) => string
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string
 }
 
 export const I18nContext = createContext<I18nApi | null>(null)

@@ -26,59 +26,63 @@ export function ForgotPasswordPage() {
   }
 
   return (
-    <main style={{ padding: 24, maxWidth: 520, margin: '0 auto' }}>
-      <div
-        style={{
-          border: '1px solid rgba(255,255,255,0.12)',
-          borderRadius: 18,
-          padding: 20,
-          background: 'rgba(255,255,255,0.05)',
-          boxShadow: '0 22px 70px rgba(0,0,0,0.22)',
-        }}
-      >
-        <h1 style={{ margin: 0 }}>{t('auth.forgotPassword')}</h1>
-        <p style={{ margin: '10px 0 0', opacity: 0.85 }}>{t('auth.forgotPasswordHint')}</p>
+    <div className="authCard">
+      <div>
+        <h1 className="authTitle">{t('auth.forgotPassword')}</h1>
+        <p className="authSubtitle">{t('auth.forgot.subtitle')}</p>
+      </div>
 
-        <form onSubmit={onSubmit} style={{ display: 'grid', gap: 12, marginTop: 14 }}>
-          <label style={{ display: 'grid', gap: 6 }}>
-            <span style={{ fontSize: 13, opacity: 0.9 }}>{t('auth.email')}</span>
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@example.com"
-              autoComplete="email"
-              inputMode="email"
-              style={{
-                borderRadius: 12,
-                border: '1px solid rgba(255,255,255,0.12)',
-                background: 'rgba(0,0,0,0.12)',
-                color: 'inherit',
-                padding: '10px 12px',
-                outline: 'none',
-              }}
-            />
-          </label>
+      <form className="authForm" onSubmit={onSubmit}>
+        {submitted && !isValid ? <div className="authErrorBanner">{t('auth.fillRequired')}</div> : null}
+        {sent ? (
+          <div
+            className="authErrorBanner"
+            style={{
+              borderColor: 'rgba(255,255,255,0.14)',
+              background: 'rgba(255,255,255,0.03)',
+              color: 'rgba(255,255,255,0.9)',
+            }}
+          >
+            {t('auth.forgotPasswordSent')}
+          </div>
+        ) : null}
 
-          {submitted && !isValid ? <div style={{ fontSize: 12, color: '#ffb4b4' }}>{t('auth.fillRequired')}</div> : null}
-          {sent ? <div style={{ fontSize: 12, opacity: 0.9 }}>{t('auth.forgotPasswordSent')}</div> : null}
+        <label className="authField">
+          <span className="authLabel">{t('auth.email')}</span>
+          <input
+            className="authInput"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="name@example.com"
+            autoComplete="email"
+            inputMode="email"
+          />
+        </label>
 
-          <button type="submit" className="submitBtn" style={{ marginTop: 6, borderRadius: 12 }}>
-            {t('auth.sendLink')}
-          </button>
-        </form>
+        <button type="submit" className="authBtn authBtn--primary" disabled={!isValid}>
+          {t('auth.sendLink')}
+        </button>
 
-        <div style={{ marginTop: 14, fontSize: 13, opacity: 0.92, lineHeight: 1.5 }}>
+        <div className="authFooterText">
           <div>
             {t('auth.noAccountJoin')}{' '}
-            <Link to={registerLink('customer')}>{t('auth.joinAsCustomer')}</Link> {t('auth.or')}{' '}
-            <Link to={registerLink('executor')}>{t('auth.joinAsExecutor')}</Link>.
+            <Link className="authLink" to={registerLink('customer')}>
+              {t('auth.joinAsCustomer')}
+            </Link>{' '}
+            {t('auth.or')}{' '}
+            <Link className="authLink" to={registerLink('executor')}>
+              {t('auth.joinAsExecutor')}
+            </Link>
+            .
           </div>
           <div style={{ marginTop: 8 }}>
-            <Link to={paths.login}>{t('auth.backToLogin')}</Link>
+            <Link className="authLink" to={paths.login}>
+              {t('auth.backToLogin')}
+            </Link>
           </div>
         </div>
-      </div>
-    </main>
+      </form>
+    </div>
   )
 }
 

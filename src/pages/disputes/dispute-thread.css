@@ -1,0 +1,176 @@
+.disputeThreadPage {
+  padding: 24px 20px;
+}
+
+.disputeThreadContainer {
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.disputeThreadHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.disputeThreadBack {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.disputeThreadBack:hover {
+  transform: translateY(-1px);
+  border-color: var(--border3);
+  background: var(--surface2);
+}
+
+.disputeThreadHeader__main {
+  min-width: 0;
+  flex: 1;
+}
+
+.disputeThreadKicker {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.disputeThreadTitle {
+  margin: 6px 0 0;
+  font-size: 22px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disputeThreadParticipants {
+  margin-top: 6px;
+  font-size: 13px;
+  opacity: 0.85;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.disputeThreadDot {
+  opacity: 0.65;
+}
+
+.disputeChat {
+  border: 1px solid var(--border);
+  background: var(--card2);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.disputeChatList {
+  max-height: min(62vh, 640px);
+  overflow: auto;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.disputeChatEmpty {
+  opacity: 0.8;
+  padding: 10px 6px;
+}
+
+.disputeMsg {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+
+.disputeMsg--mine {
+  justify-items: end;
+}
+
+.disputeMsg__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.disputeMsg__author {
+  font-weight: 650;
+  opacity: 0.95;
+}
+
+.disputeMsg__bubble {
+  max-width: min(620px, 100%);
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+
+.disputeMsg--mine .disputeMsg__bubble {
+  border-color: rgba(124, 58, 237, 0.35);
+  background: rgba(124, 58, 237, 0.12);
+}
+
+.disputeChatComposer {
+  border-top: 1px solid var(--border2);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  background: var(--bg1);
+}
+
+.disputeChatInput {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card2);
+  color: var(--text);
+  padding: 10px 12px;
+  resize: vertical;
+  outline: none;
+}
+
+.disputeChatInput:focus {
+  border-color: var(--border3);
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.14);
+}
+
+.disputeChatSend {
+  justify-self: start;
+  border-radius: 12px;
+  border: 1px solid rgba(124, 58, 237, 0.55);
+  background: rgba(124, 58, 237, 0.18);
+  color: var(--text);
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 650;
+  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease, opacity 160ms ease;
+}
+
+.disputeChatSend:hover {
+  transform: translateY(-1px);
+  border-color: rgba(124, 58, 237, 0.7);
+  background: rgba(124, 58, 237, 0.22);
+}
+
+.disputeChatSend:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+

@@ -23,9 +23,13 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const t = useCallback(
-    (key: TranslationKey) => {
-      const value = translations[locale][key]
-      return value ?? translations.en[key] ?? key
+    (key: TranslationKey, params?: Record<string, string | number>) => {
+      const value = translations[locale][key] ?? translations.en[key] ?? key
+      if (!params) return value
+      return value.replace(/\{(\w+)\}/g, (_full, name: string) => {
+        const v = params[name]
+        return v === undefined || v === null ? `{${name}}` : String(v)
+      })
     },
     [locale],
   )

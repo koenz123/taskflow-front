@@ -1,0 +1,244 @@
+.editProfilePage {
+  padding: 24px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.editProfileTitle {
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+
+.editProfileForm {
+  display: grid;
+  gap: 12px;
+}
+
+.editProfileField {
+  display: grid;
+  gap: 6px;
+}
+
+.editProfileLabel {
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.editProfileOptional {
+  opacity: 0.7;
+  font-size: 12px;
+}
+
+.editProfileInput {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card2);
+  color: var(--text);
+  padding: 10px 12px;
+}
+
+.editProfileHiddenFileInput {
+  display: none;
+}
+
+.editProfileInputWithAction {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.editProfileInputWithAction .editProfileInput {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.editProfileInputActionBtn {
+  flex: 0 0 auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  color: var(--text);
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.editProfileInputActionBtn:hover {
+  border-color: var(--border3);
+  background: var(--surface2);
+}
+
+.editProfileAttachedVideoHint {
+  margin-top: 6px;
+  font-size: 12px;
+  opacity: 0.8;
+  word-break: break-word;
+}
+
+.editProfileInput::placeholder {
+  color: var(--muted2);
+}
+
+.editProfileInput:focus {
+  outline: none;
+  border-color: var(--border3);
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.12);
+}
+
+.editProfileError {
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.editProfileSocialsHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.editProfileSocialsHeadLeft {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.editProfileSocialsHint {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.editProfileSocialsBtn {
+  margin-top: 10px;
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  color: var(--text);
+  padding: 10px 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.editProfileSocialsBtn:hover {
+  border-color: var(--border3);
+  background: var(--surface2);
+}
+
+.editProfileActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  align-items: center;
+}
+
+.editProfileBtn {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  color: var(--text);
+  padding: 12px 14px;
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.editProfileBtn:hover {
+  border-color: var(--border3);
+  background: var(--surface2);
+}
+
+.editProfileBtn--primary {
+  border-color: rgba(99, 102, 241, 0.55);
+  background: rgba(99, 102, 241, 0.18);
+}
+
+.editProfileBtn--primary:hover {
+  border-color: rgba(99, 102, 241, 0.75);
+  background: rgba(99, 102, 241, 0.24);
+}
+
+.editProfileBtn--inactive {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.editProfileBtn--inactive:hover {
+  border-color: rgba(99, 102, 241, 0.55);
+  background: rgba(99, 102, 241, 0.18);
+}
+
+.editProfileCancelLink {
+  align-self: center;
+  opacity: 0.9;
+}
+
+.editProfileCancelLink:hover {
+  opacity: 1;
+}
+
+/* Socials modal */
+.editProfileOverlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  z-index: 120;
+}
+
+.editProfileModal {
+  width: min(920px, 100%);
+  max-height: min(80vh, 720px);
+  overflow: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  box-shadow: var(--shadow-md);
+  padding: 16px;
+}
+
+.editProfileModalTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.editProfileModalTitleRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.editProfileModalTitle {
+  margin: 0;
+  font-size: 18px;
+}
+
+.editProfileSocialsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+@media (max-width: 860px) {
+  .editProfileSocialsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.editProfileModalActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+

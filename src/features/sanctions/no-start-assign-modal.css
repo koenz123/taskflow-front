@@ -1,0 +1,115 @@
+.noStartOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: var(--overlay);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.noStartModal {
+  width: min(520px, 100%);
+  overflow: hidden;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+}
+
+.noStartModal__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border2);
+}
+
+.noStartModal__label {
+  margin: 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: rgba(124, 58, 237, 0.8);
+  font-weight: 700;
+}
+
+.noStartModal__title {
+  margin: 4px 0 0;
+  font-size: 18px;
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.noStartModal__close {
+  border: none;
+  background: var(--card);
+  color: var(--muted);
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  font-size: 20px;
+  cursor: pointer;
+  transition: all 150ms ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.noStartModal__close:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.noStartModal__body {
+  padding: 14px 20px 6px;
+}
+
+.noStartModal__text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  opacity: 0.9;
+}
+
+.noStartModal__footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 12px 20px 18px;
+  border-top: 1px solid var(--border2);
+}
+
+.noStartModal__cancel,
+.noStartModal__confirm {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.9);
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 200ms ease;
+}
+
+.noStartModal__cancel:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.08);
+  transform: scale(1.02);
+}
+
+.noStartModal__confirm {
+  border-color: rgba(124, 58, 237, 0.55);
+  background: rgba(124, 58, 237, 0.18);
+}
+
+.noStartModal__confirm:hover {
+  border-color: rgba(124, 58, 237, 0.8);
+  background: rgba(124, 58, 237, 0.28);
+  transform: scale(1.02);
+}
+

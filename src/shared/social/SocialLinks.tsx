@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react'
 import { socialPlatforms } from './socialPlatforms'
 
 export type SocialMap = Partial<Record<(typeof socialPlatforms)[number]['key'], string>>
@@ -5,9 +6,13 @@ export type SocialMap = Partial<Record<(typeof socialPlatforms)[number]['key'], 
 export function SocialLinks({ socials }: { socials?: SocialMap }) {
   if (!socials) return null
 
-  const items = socialPlatforms
-    .map((p) => ({ ...p, url: socials[p.key]?.trim() || '' }))
-    .filter((x) => x.url)
+  const items = useMemo(() => {
+    return socialPlatforms
+      .map((p) => ({ ...p, url: socials[p.key]?.trim() || '' }))
+      .filter((x) => x.url)
+  }, [socials])
+
+  const [brokenKeys, setBrokenKeys] = useState<Record<string, true>>({})
 
   if (items.length === 0) return null
 
@@ -31,15 +36,22 @@ export function SocialLinks({ socials }: { socials?: SocialMap }) {
             textDecoration: 'none',
           }}
         >
-          <img
-            src={`https://cdn.simpleicons.org/${x.simpleIconsSlug}/white`}
-            alt={x.label}
-            width={18}
-            height={18}
-            loading="lazy"
-            referrerPolicy="no-referrer"
-            style={{ display: 'block' }}
-          />
+          {brokenKeys[x.key] ? (
+            <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.9 }}>
+              {x.label.slice(0, 1).toUpperCase()}
+            </span>
+          ) : (
+            <img
+              src={`https://cdn.simpleicons.org/${x.simpleIconsSlug}/ffffff`}
+              alt={x.label}
+              width={18}
+              height={18}
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              style={{ display: 'block' }}
+              onError={() => setBrokenKeys((prev) => ({ ...prev, [x.key]: true }))}
+            />
+          )}
         </a>
       ))}
     </div>

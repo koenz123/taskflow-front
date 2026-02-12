@@ -1,30 +1,35 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
-import { paths, taskDetailsPath, userProfilePath } from '@/app/router/paths'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { paths } from '@/app/router/paths'
 import { useI18n } from '@/shared/i18n/I18nContext'
 import { useAuth } from '@/shared/auth/AuthContext'
 import { useUsers } from '@/entities/user/lib/useUsers'
+import './header.css'
+import { useDevMode } from '@/shared/dev/devMode'
+import { getActiveTheme, setTheme } from '@/shared/theme/theme'
 import { useNotifications } from '@/entities/notification/lib/useNotifications'
 import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import { useTasks } from '@/entities/task/lib/useTasks'
-import { pickText } from '@/entities/task/lib/taskText'
-import './header.css'
+import { buildNotificationVM } from '@/entities/notification/lib/notificationViewModel'
+
+const DEV_ARBITER_USER_ID = 'user_dev_arbiter'
 
 export function Header() {
   const { locale, setLocale, t } = useI18n()
   const auth = useAuth()
+  const devMode = useDevMode()
   const users = useUsers()
+  const tasks = useTasks()
+  const notifications = useNotifications(auth.user?.id)
   const location = useLocation()
+  const navigate = useNavigate()
+  const [theme, setThemeState] = useState(() => getActiveTheme())
   const [isLangOpen, setIsLangOpen] = useState(false)
-  const [isNotifOpen, setIsNotifOpen] = useState(false)
-  const [isNotifExpanded, setIsNotifExpanded] = useState(false)
   const langRef = useRef<HTMLDivElement | null>(null)
+  const [isNotifOpen, setIsNotifOpen] = useState(false)
   const notifRef = useRef<HTMLDivElement | null>(null)
 
   const flag = useMemo(() => (locale === 'ru' ? '🇷🇺' : '🇺🇸'), [locale])
-  const notifications = useNotifications(auth.user?.id)
-  const unreadCount = useMemo(() => notifications.filter((n) => !n.readAt).length, [notifications])
-  const tasks = useTasks()
 
   const userById = useMemo(() => {
     const map = new Map<string, (typeof users)[number]>()
@@ -37,6 +42,49 @@ export function Header() {
     for (const x of tasks) map.set(x.id, x)
     return map
   }, [tasks])
+
+  const isArbiter = Boolean(auth.user?.role === 'arbiter' && devMode.enabled)
+  const canJumpToArbiter = Boolean(auth.user && devMode.enabled && auth.user.role !== 'arbiter')
+  const arbiterExists = Boolean(userById.get(DEV_ARBITER_USER_ID))
+  const avatarUrl = auth.user?.avatarDataUrl ?? null
+  const avatarLabel = auth.user?.fullName?.trim() || auth.user?.email || ''
+  const avatarInitials = useMemo(() => {
+    const name = (auth.user?.fullName ?? '').trim()
+    if (!name) return 'U'
+    const parts = name.split(/\s+/).filter(Boolean)
+    const first = parts[0]?.[0] ?? 'U'
+    const second = parts.length > 1 ? parts[1]?.[0] : parts[0]?.[1]
+    const raw = (first + (second ?? '')).toUpperCase()
+    return raw.slice(0, 2)
+  }, [auth.user?.fullName])
+  const roleLabel = (role: string) => {
+    if (locale === 'ru') {
+      if (role === 'customer') return 'Заказчик'
+      if (role === 'executor') return 'Исполнитель'
+      if (role === 'arbiter') return 'Арбитр'
+    }
+    if (role === 'customer') return 'Customer'
+    if (role === 'executor') return 'Executor'
+    if (role === 'arbiter') return 'Arbiter'
+    return role
+  }
+
+  const switchableUsers = useMemo(() => {
+    // Arbiter can switch into any user (dev tool).
+    // Keep current user included to avoid empty select state.
+    if (!auth.user) return []
+    const list = users.slice()
+    // Stable ordering: arbiter first, then customers, then executors, then others by name/email.
+    const rank = (role: string) => (role === 'arbiter' ? 0 : role === 'customer' ? 1 : role === 'executor' ? 2 : 9)
+    return list.sort((a, b) => {
+      const ra = rank(a.role)
+      const rb = rank(b.role)
+      if (ra !== rb) return ra - rb
+      const an = (a.fullName || a.email || a.id).toLowerCase()
+      const bn = (b.fullName || b.email || b.id).toLowerCase()
+      return an.localeCompare(bn)
+    })
+  }, [auth.user, users])
 
   useEffect(() => {
     if (!isLangOpen) return
@@ -83,6 +131,8 @@ export function Header() {
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [isNotifOpen])
+
+  // (api health check removed: it wasn't rendered anywhere)
 
   const langSwitcher = (
     <div className="lang" ref={langRef}>
@@ -134,166 +184,202 @@ export function Header() {
     </div>
   )
 
+  const arbiterNotif = (() => {
+    const user = auth.user
+    if (!user) return null
+    if (user.role !== 'arbiter') return null
+
+    const list = notifications.filter(
+      (n) =>
+        n.type === 'dispute_opened' ||
+        n.type === 'dispute_message' ||
+        n.type === 'dispute_status' ||
+        n.type === 'dispute_sla_threshold',
+    )
+    const unread = list.filter((n) => !n.readAt).length
+    const badgeText = unread > 99 ? '99+' : unread ? String(unread) : null
+    const preview = list.slice(0, 6)
+
+    return (
+      <div className="notif" ref={notifRef}>
+        <button
+          type="button"
+          className="notif__btn"
+          aria-label={locale === 'ru' ? 'Уведомления арбитра' : 'Arbiter notifications'}
+          aria-haspopup="menu"
+          aria-expanded={isNotifOpen}
+          onClick={() => setIsNotifOpen((v) => !v)}
+        >
+          <span aria-hidden="true">🔔</span>
+          {badgeText ? <span className="notif__badge">{badgeText}</span> : null}
+        </button>
+
+        {isNotifOpen ? (
+          <div className="notif__menu" role="menu" aria-label={locale === 'ru' ? 'Уведомления' : 'Notifications'}>
+            <div className="notif__header">
+              <div className="notif__titleRow">
+                <div className="notif__title">{t('notifications.title')}</div>
+                {unread ? <div className="notif__count">{unread}</div> : null}
+              </div>
+              <div className="notif__actions">
+                <button
+                  type="button"
+                  className="notif__smallBtn"
+                  disabled={!unread}
+                  onClick={() => notificationRepo.markAllRead(user.id)}
+                >
+                  {locale === 'ru' ? 'Прочитать всё' : 'Mark all read'}
+                </button>
+              </div>
+            </div>
+
+            {preview.length === 0 ? (
+              <div className="notif__empty">{locale === 'ru' ? 'Пока нет уведомлений.' : 'No notifications yet.'}</div>
+            ) : (
+              <div className="notif__items">
+                {preview.map((n) => {
+                  const actor = userById.get(n.actorUserId) ?? null
+                  const task = taskById.get(n.taskId) ?? null
+                  const vm = buildNotificationVM({
+                    n,
+                    actorId: actor?.id ?? null,
+                    task,
+                    locale,
+                    t,
+                  })
+                  const to = vm.href ?? paths.notifications
+                  return (
+                    <Link
+                      key={n.id}
+                      className={`notif__item${vm.unread ? ' notif__item--unread' : ''}`}
+                      to={to}
+                      role="menuitem"
+                      onClick={() => {
+                        notificationRepo.markRead(n.id)
+                        setIsNotifOpen(false)
+                      }}
+                    >
+                      <span className="notifItem__icon" aria-hidden="true">
+                        {vm.icon}
+                      </span>
+                      <span className="notifItem__body">
+                        <span className="notifItem__title">{vm.title}</span>
+                        <span className="notifItem__subtitle">{vm.subtitle}</span>
+                      </span>
+                      <span className="notifItem__time">{vm.timeLabel}</span>
+                    </Link>
+                  )
+                })}
+              </div>
+            )}
+
+            <div className="notif__footer">
+              <Link
+                className="notif__viewAll"
+                to={paths.notifications}
+                onClick={() => setIsNotifOpen(false)}
+              >
+                {locale === 'ru' ? 'Все уведомления' : 'View all'}
+              </Link>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    )
+  })()
+
   return (
     <header className="header">
       <div className="header__inner">
-        <Link to={paths.home} className="header__brand" aria-label="UI Create Works">
-          UI Create Works
-        </Link>
-
         <div className="header__right">
+          <button
+            type="button"
+            className={`devToggle${devMode.enabled ? ' devToggle--on' : ''}`}
+            onClick={() => devMode.setEnabled(!devMode.enabled)}
+            aria-pressed={devMode.enabled}
+            title={t('dev.mode')}
+          >
+            <span className="devToggle__label">{t('dev.mode')}</span>
+            <span className="devToggle__state">{devMode.enabled ? t('dev.on') : t('dev.off')}</span>
+          </button>
+
+          {canJumpToArbiter ? (
+            <button
+              type="button"
+              className="arbiterJumpBtn"
+              disabled={!arbiterExists}
+              aria-label={locale === 'ru' ? 'Перейти в аккаунт арбитра' : 'Switch to arbiter'}
+              title={locale === 'ru' ? 'Перейти в аккаунт арбитра (dev)' : 'Switch to arbiter (dev)'}
+              onClick={() => {
+                if (!arbiterExists) return
+                auth.switchUser(DEV_ARBITER_USER_ID)
+                navigate(paths.disputes)
+              }}
+            >
+              <span aria-hidden="true">⚖️</span>
+            </button>
+          ) : null}
+
+          {isArbiter && auth.user ? (
+            <div className="profileSwitch" aria-label={locale === 'ru' ? 'Переключение профиля' : 'Switch profile'}>
+              <span className="profileSwitch__label">{locale === 'ru' ? 'Профиль' : 'Profile'}</span>
+              <select
+                className="profileSwitch__select"
+                value={auth.user.id}
+                onChange={(e) => {
+                  const nextUserId = e.target.value
+                  const nextUser = userById.get(nextUserId) ?? null
+                  auth.switchUser(nextUserId)
+                  // Move to a safe landing page for the switched role.
+                  if (!nextUser) {
+                    navigate(paths.profile)
+                    return
+                  }
+                  if (nextUser.role === 'customer') navigate(paths.customerTasks)
+                  else if (nextUser.role === 'executor') navigate(paths.tasks)
+                  else if (nextUser.role === 'arbiter') navigate(paths.disputes)
+                  else navigate(paths.profile)
+                }}
+                title={locale === 'ru' ? 'Переключить активный аккаунт (dev)' : 'Switch active account (dev)'}
+              >
+                {switchableUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.fullName || u.email || u.id} · {roleLabel(u.role)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            className="theme__btn"
+            aria-label={locale === 'ru' ? 'Тема' : 'Theme'}
+            aria-pressed={theme === 'dark'}
+            title={theme === 'dark' ? (locale === 'ru' ? 'Тёмная тема' : 'Dark theme') : (locale === 'ru' ? 'Светлая тема' : 'Light theme')}
+            onClick={() => {
+              const next = theme === 'dark' ? 'light' : 'dark'
+              setTheme(next)
+              setThemeState(next)
+            }}
+          >
+            <span aria-hidden="true">{theme === 'dark' ? '🌙' : '☀️'}</span>
+          </button>
+
           {auth.user ? (
             <>
+              {arbiterNotif}
               {langSwitcher}
 
-              <div className="notif" ref={notifRef}>
-                <button
-                  type="button"
-                  className="notif__btn"
-                  aria-label={t('notifications.title')}
-                  aria-haspopup="menu"
-                  aria-expanded={isNotifOpen}
-                  onClick={() => {
-                    setIsNotifOpen((v) => {
-                      const next = !v
-                      if (next) setIsNotifExpanded(false)
-                      return next
-                    })
-                  }}
-                >
-                  <span aria-hidden="true">🔔</span>
-                  {unreadCount ? <span className="notif__badge">{unreadCount > 99 ? '99+' : unreadCount}</span> : null}
-                </button>
-
-                {isNotifOpen ? (
-                  <div className="notif__menu" role="menu">
-                    <div className="notif__header">
-                      <div style={{ display: 'grid', gap: 6 }}>
-                        <div className="notif__title">{t('notifications.title')}</div>
-                        {notifications.length > 4 ? (
-                          <button
-                            type="button"
-                            className="notif__toggle"
-                            onClick={() => setIsNotifExpanded((v) => !v)}
-                          >
-                            {isNotifExpanded ? t('notifications.showLess') : t('notifications.showAll')}
-                          </button>
-                        ) : null}
-                      </div>
-                      <button
-                        type="button"
-                        className="notif__smallBtn"
-                        onClick={() => {
-                          if (!auth.user) return
-                          notificationRepo.markAllRead(auth.user.id)
-                        }}
-                      >
-                        {t('notifications.markAllRead')}
-                      </button>
-                    </div>
-
-                    {notifications.length === 0 ? (
-                      <div className="notif__empty">{t('notifications.empty')}</div>
-                    ) : (
-                      <div
-                        className="notif__items"
-                        style={
-                          isNotifExpanded && notifications.length > 8
-                            ? { maxHeight: 420, overflowY: 'auto', paddingRight: 4 }
-                            : undefined
-                        }
-                      >
-                        {(isNotifExpanded ? notifications : notifications.slice(0, 4)).map((n) => {
-                          const actor = userById.get(n.actorUserId)
-                          const task = taskById.get(n.taskId)
-                          const actorName = actor?.fullName ?? t('notifications.someone')
-                          const taskTitle = task ? pickText(task.title, locale) : n.taskId
-                          const prefix =
-                            n.type === 'task_completed'
-                              ? t('notifications.taskCompletedPrefix')
-                              : n.type === 'task_application'
-                                ? t('notifications.taskApplicationPrefix')
-                                : n.type === 'task_assigned'
-                                  ? t('notifications.taskAssignedPrefix')
-                                  : t('notifications.taskTakenPrefix')
-
-                          return (
-                            <div
-                              key={n.id}
-                              className={`notif__item${n.readAt ? '' : ' notif__item--unread'}`}
-                              role="menuitem"
-                            >
-                              <div className="notif__text">
-                                {prefix}{' '}
-                                <Link
-                                  className="notif__link"
-                                  to={actor ? userProfilePath(actor.id) : paths.profile}
-                                  onClick={() => {
-                                    notificationRepo.markRead(n.id)
-                                    setIsNotifExpanded(false)
-                                    setIsNotifOpen(false)
-                                  }}
-                                >
-                                  {actorName}
-                                </Link>
-                                {task ? (
-                                  <>
-                                    {' '}
-                                    —{' '}
-                                    <Link
-                                      className="notif__link"
-                                      to={taskDetailsPath(task.id)}
-                                      onClick={() => {
-                                        notificationRepo.markRead(n.id)
-                                        setIsNotifExpanded(false)
-                                        setIsNotifOpen(false)
-                                      }}
-                                    >
-                                      {taskTitle}
-                                    </Link>
-                                  </>
-                                ) : null}
-                              </div>
-
-                              <div className="notif__meta">
-                                <span>{new Date(n.createdAt).toLocaleString()}</span>
-                                {actor ? (
-                                  <Link
-                                    className="notif__link"
-                                    to={userProfilePath(actor.id)}
-                                    onClick={() => {
-                                      notificationRepo.markRead(n.id)
-                                      setIsNotifExpanded(false)
-                                      setIsNotifOpen(false)
-                                    }}
-                                  >
-                                    {t('notifications.viewProfile')}
-                                  </Link>
-                                ) : null}
-                                <Link
-                                  className="notif__link"
-                                  to={taskDetailsPath(n.taskId)}
-                                  onClick={() => {
-                                    notificationRepo.markRead(n.id)
-                                    setIsNotifExpanded(false)
-                                    setIsNotifOpen(false)
-                                  }}
-                                >
-                                  {t('notifications.viewTask')}
-                                </Link>
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                ) : null}
-              </div>
-
-              <Link className="header__button" to={paths.profile}>
-                {t('auth.profile')}
-              </Link>
+              {auth.user.role !== 'arbiter' ? (
+                <Link className="headerAvatar" to={paths.profile} aria-label={avatarLabel} title={avatarLabel}>
+                  {avatarUrl ? <img className="headerAvatar__img" src={avatarUrl} alt="" /> : <span className="headerAvatar__txt">{avatarInitials}</span>}
+                </Link>
+              ) : (
+                <div className="headerAvatar" aria-label={avatarLabel} title={avatarLabel}>
+                  {avatarUrl ? <img className="headerAvatar__img" src={avatarUrl} alt="" /> : <span className="headerAvatar__txt">{avatarInitials}</span>}
+                </div>
+              )}
             </>
           ) : location.pathname !== paths.register ? (
             <>

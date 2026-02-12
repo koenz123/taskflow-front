@@ -4,7 +4,6 @@ import { paths } from '@/app/router/paths'
 import { useI18n } from '@/shared/i18n/I18nContext'
 import type { TranslationKey } from '@/shared/i18n/translations'
 import { useAuth } from '@/shared/auth/AuthContext'
-import './register-page.css'
 
 type Role = 'customer' | 'executor'
 
@@ -20,13 +19,32 @@ type FormState = {
 
 type FormErrors = Partial<Record<keyof FormState, string>>
 
+const PASSWORD_MIN_LEN = 8
+
+function isValidEmail(value: string) {
+  // Simple pragmatic email check (client-side)
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+}
+
+function isValidPhone(value: string) {
+  // Accepts "+", spaces, (), "-", etc. Validates by digits count.
+  const digits = value.replace(/\D/g, '')
+  return digits.length >= 10 && digits.length <= 15
+}
+
 function validate(form: FormState, t: (key: TranslationKey) => string): FormErrors {
   const errors: FormErrors = {}
 
   if (!form.fullName.trim()) errors.fullName = t('validation.fullNameRequired')
   if (!form.phone.trim()) errors.phone = t('validation.phoneRequired')
+  else if (!isValidPhone(form.phone)) errors.phone = t('validation.phoneInvalid')
+
   if (!form.email.trim()) errors.email = t('validation.emailRequired')
+  else if (!isValidEmail(form.email)) errors.email = t('validation.emailInvalid')
+
   if (!form.password) errors.password = t('validation.passwordRequired')
+  else if (form.password.length < PASSWORD_MIN_LEN) errors.password = t('validation.passwordMinLength')
+
   if (!form.passwordConfirm) errors.passwordConfirm = t('validation.passwordConfirmRequired')
   if (form.password && form.passwordConfirm && form.password !== form.passwordConfirm) {
     errors.passwordConfirm = t('validation.passwordsDoNotMatch')
@@ -57,6 +75,7 @@ export function RegisterPage() {
   const [touched, setTouched] = useState<Partial<Record<keyof FormState, boolean>>>({})
   const [submitted, setSubmitted] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [emailTakenKind, setEmailTakenKind] = useState<null | 'taken' | 'pending'>(null)
 
   const errors = useMemo(() => validate(form, t), [form, t])
 
@@ -67,16 +86,17 @@ export function RegisterPage() {
       ) as FormErrors)
 
   const isValid = Object.keys(errors).length === 0
+  const showCompany = form.role === 'customer'
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    void (async () => {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setSubmitted(true)
     setFormError(null)
+    setEmailTakenKind(null)
 
     if (!isValid) return
 
@@ -89,139 +109,162 @@ export function RegisterPage() {
         company: form.role === 'customer' ? form.company : undefined,
         password: form.password,
       })
-      navigate(paths.profile)
+      navigate(`${paths.verifyEmailSent}?email=${encodeURIComponent(form.email.trim())}`)
     } catch (e) {
-      if (e instanceof Error && e.message === 'email_taken') setFormError(t('auth.emailTaken'))
+      if (e instanceof Error && e.message === 'email_taken') {
+        setEmailTakenKind('taken')
+        setFormError(t('auth.emailTaken'))
+      } else if (e instanceof Error && e.message === 'email_pending') {
+        setEmailTakenKind('pending')
+        setFormError(t('auth.emailPending'))
+      }
       else setFormError(t('auth.genericError'))
     }
-    })()
   }
 
   return (
-    <div className="registerPage">
-      <div className="registerCard">
-        <h1 className="registerTitle">{t('register.title')}</h1>
-
-        <div className="roleSwitch" role="group" aria-label={t('register.roleLabel')}>
-          <button
-            type="button"
-            className={form.role === 'customer' ? 'roleBtn roleBtn--active' : 'roleBtn'}
-            onClick={() => setField('role', 'customer')}
-          >
-            {t('register.role.client')}
-          </button>
-          <button
-            type="button"
-            className={form.role === 'executor' ? 'roleBtn roleBtn--active' : 'roleBtn'}
-            onClick={() =>
-              setForm((prev) => ({
-                ...prev,
-                role: 'executor',
-                company: '',
-              }))
-            }
-          >
-            {t('register.role.contractor')}
-          </button>
-        </div>
-
-        <form className="form" onSubmit={onSubmit}>
-          {formError ? <div className="field__error">{formError}</div> : null}
-          <label className="field">
-            <span className="field__label">{t('register.fullName')}</span>
-            <input
-              className="field__input"
-              value={form.fullName}
-              onChange={(e) => setField('fullName', e.target.value)}
-              onBlur={() => setTouched((t) => ({ ...t, fullName: true }))}
-              placeholder="John Smith"
-              autoComplete="name"
-            />
-            {visibleErrors.fullName ? <span className="field__error">{visibleErrors.fullName}</span> : null}
-          </label>
-
-          <label className="field">
-            <span className="field__label">{t('register.phone')}</span>
-            <input
-              className="field__input"
-              value={form.phone}
-              onChange={(e) => setField('phone', e.target.value)}
-              onBlur={() => setTouched((t) => ({ ...t, phone: true }))}
-              placeholder="+1 555 123 4567"
-              autoComplete="tel"
-              inputMode="tel"
-            />
-            {visibleErrors.phone ? <span className="field__error">{visibleErrors.phone}</span> : null}
-          </label>
-
-          <label className="field">
-            <span className="field__label">{t('register.email')}</span>
-            <input
-              className="field__input"
-              value={form.email}
-              onChange={(e) => setField('email', e.target.value)}
-              onBlur={() => setTouched((t) => ({ ...t, email: true }))}
-              placeholder="name@example.com"
-              autoComplete="email"
-              inputMode="email"
-            />
-            {visibleErrors.email ? <span className="field__error">{visibleErrors.email}</span> : null}
-          </label>
-
-          <label className="field">
-            <span className="field__label">{t('register.password')}</span>
-            <input
-              className="field__input"
-              value={form.password}
-              onChange={(e) => setField('password', e.target.value)}
-              onBlur={() => setTouched((t) => ({ ...t, password: true }))}
-              type="password"
-              autoComplete="new-password"
-              placeholder="At least 8 characters"
-            />
-            {visibleErrors.password ? <span className="field__error">{visibleErrors.password}</span> : null}
-          </label>
-
-          <label className="field">
-            <span className="field__label">{t('register.passwordConfirm')}</span>
-            <input
-              className="field__input"
-              value={form.passwordConfirm}
-              onChange={(e) => setField('passwordConfirm', e.target.value)}
-              onBlur={() => setTouched((t) => ({ ...t, passwordConfirm: true }))}
-              type="password"
-              autoComplete="new-password"
-              placeholder="Repeat password"
-            />
-            {visibleErrors.passwordConfirm ? (
-              <span className="field__error">{visibleErrors.passwordConfirm}</span>
-            ) : null}
-          </label>
-
-          {form.role === 'customer' ? (
-            <label className="field">
-              <span className="field__label">
-                {t('register.company')} <span className="field__hint">{t('common.optional')}</span>
-              </span>
-              <input
-                className="field__input"
-                value={form.company}
-                onChange={(e) => setField('company', e.target.value)}
-                placeholder="Acme Inc."
-                autoComplete="organization"
-              />
-            </label>
-          ) : null}
-
-          <button className="submitBtn" type="submit">
-            {t('register.submit')}
-          </button>
-
-          <p className="footerText">
-            {t('register.haveAccount')} <Link to={paths.login}>{t('register.signInLink')}</Link>
-          </p>
-        </form>
+    <div className="authCard">
+      <div>
+        <h1 className="authTitle">{t('register.title')}</h1>
+        <p className="authSubtitle">{t('auth.register.subtitle')}</p>
       </div>
+
+      <div className="authRoleSwitch" role="group" aria-label={t('register.roleLabel')}>
+        <button
+          type="button"
+          className={form.role === 'customer' ? 'authRoleBtn authRoleBtn--active' : 'authRoleBtn'}
+          onClick={() => setField('role', 'customer')}
+        >
+          {t('register.role.client')}
+        </button>
+        <button
+          type="button"
+          className={form.role === 'executor' ? 'authRoleBtn authRoleBtn--active' : 'authRoleBtn'}
+          onClick={() =>
+            setForm((prev) => ({
+              ...prev,
+              role: 'executor',
+              company: '',
+            }))
+          }
+        >
+          {t('register.role.contractor')}
+        </button>
+      </div>
+
+      <form className="authForm" onSubmit={onSubmit}>
+        {formError ? <div className="authErrorBanner">{formError}</div> : null}
+        {emailTakenKind ? (
+          <div className="authRow" style={{ marginTop: 8 }}>
+            <Link className="authLink" to={`${paths.login}?email=${encodeURIComponent(form.email.trim())}`}>
+              {t('register.signInLink')}
+            </Link>
+            {emailTakenKind === 'pending' ? (
+              <Link className="authLink" to={`${paths.verifyEmailSent}?email=${encodeURIComponent(form.email.trim())}`}>
+                {t('verifyEmail.sent.resend')}
+              </Link>
+            ) : null}
+          </div>
+        ) : null}
+
+        <label className="authField">
+          <span className="authLabel">{t('register.fullName')}</span>
+          <input
+            className="authInput"
+            value={form.fullName}
+            onChange={(e) => setField('fullName', e.target.value)}
+            onBlur={() => setTouched((t) => ({ ...t, fullName: true }))}
+            placeholder="John Smith"
+            autoComplete="name"
+          />
+          {visibleErrors.fullName ? <span className="authFieldError">{visibleErrors.fullName}</span> : null}
+        </label>
+
+        <label className="authField">
+          <span className="authLabel">{t('register.phone')}</span>
+          <input
+            className="authInput"
+            value={form.phone}
+            onChange={(e) => setField('phone', e.target.value)}
+            onBlur={() => setTouched((t) => ({ ...t, phone: true }))}
+            placeholder="+1 555 123 4567"
+            autoComplete="tel"
+            inputMode="tel"
+          />
+          {visibleErrors.phone ? <span className="authFieldError">{visibleErrors.phone}</span> : null}
+        </label>
+
+        <label className="authField">
+          <span className="authLabel">{t('register.email')}</span>
+          <input
+            className="authInput"
+            value={form.email}
+            onChange={(e) => setField('email', e.target.value)}
+            onBlur={() => setTouched((t) => ({ ...t, email: true }))}
+            placeholder="name@example.com"
+            autoComplete="email"
+            inputMode="email"
+          />
+          {visibleErrors.email ? <span className="authFieldError">{visibleErrors.email}</span> : null}
+        </label>
+
+        <label className="authField">
+          <span className="authLabel">{t('register.password')}</span>
+          <input
+            className="authInput"
+            value={form.password}
+            onChange={(e) => setField('password', e.target.value)}
+            onBlur={() => setTouched((t) => ({ ...t, password: true }))}
+            type="password"
+            autoComplete="new-password"
+            placeholder="At least 8 characters"
+          />
+          {visibleErrors.password ? <span className="authFieldError">{visibleErrors.password}</span> : null}
+        </label>
+
+        <label className="authField">
+          <span className="authLabel">{t('register.passwordConfirm')}</span>
+          <input
+            className="authInput"
+            value={form.passwordConfirm}
+            onChange={(e) => setField('passwordConfirm', e.target.value)}
+            onBlur={() => setTouched((t) => ({ ...t, passwordConfirm: true }))}
+            type="password"
+            autoComplete="new-password"
+            placeholder="Repeat password"
+          />
+          {visibleErrors.passwordConfirm ? <span className="authFieldError">{visibleErrors.passwordConfirm}</span> : null}
+        </label>
+
+        <label
+          className={showCompany ? 'authField authCompanyField' : 'authField authCompanyField authCompanyField--hidden'}
+          aria-hidden={!showCompany}
+        >
+          <span className="authLabel">
+            {t('register.company')} <span style={{ opacity: 0.7, fontWeight: 400 }}>{t('common.optional')}</span>
+          </span>
+          <input
+            className="authInput"
+            value={form.company}
+            onChange={(e) => setField('company', e.target.value)}
+            placeholder="Acme Inc."
+            autoComplete="organization"
+            disabled={!showCompany}
+            tabIndex={showCompany ? 0 : -1}
+          />
+        </label>
+
+        <button className="authBtn authBtn--primary" type="submit" disabled={!isValid}>
+          {t('register.submit')}
+        </button>
+
+        <p className="authFooterText">
+          {t('register.haveAccount')}{' '}
+          <Link className="authLink" to={paths.login}>
+            {t('register.signInLink')}
+          </Link>
+        </p>
+      </form>
     </div>
   )
 }

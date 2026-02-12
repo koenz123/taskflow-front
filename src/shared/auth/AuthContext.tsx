@@ -1,12 +1,14 @@
 import { createContext, useContext } from 'react'
 import type { SocialPlatform, User, UserRole } from '@/entities/user/model/user'
 
+type SignUpRole = Exclude<UserRole, 'arbiter'>
+
 export type AuthApi = {
   user: User | null
   isAuthenticated: boolean
 
   signUp: (input: {
-    role: UserRole
+    role: SignUpRole
     fullName: string
     phone: string
     email: string

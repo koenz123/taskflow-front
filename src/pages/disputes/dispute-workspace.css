@@ -1,0 +1,484 @@
+.disputeWsPage {
+  padding: 0;
+}
+
+.disputeWsContainer {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.disputeWsHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.disputeWsHeader__left {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.disputeWsBack {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  color: var(--text);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.disputeWsBack:hover {
+  transform: translateY(-1px);
+  border-color: var(--border3);
+  background: var(--surface2);
+}
+
+.disputeWsHeader__meta {
+  min-width: 0;
+}
+
+.disputeWsKicker {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.disputeWsTitle {
+  margin: 6px 0 0;
+  font-size: 22px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disputeWsSub {
+  margin-top: 6px;
+  font-size: 13px;
+  opacity: 0.85;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.disputeWsDot {
+  opacity: 0.65;
+}
+
+.disputeWsMono {
+  font-variant-numeric: tabular-nums;
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    'Liberation Mono',
+    'Courier New',
+    monospace;
+  font-size: 12px;
+}
+
+.disputeWsGrid {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(420px, 1.4fr) minmax(320px, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.disputeWsCol {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.disputeWsPanel {
+  border: 1px solid var(--border);
+  background: var(--card2);
+  border-radius: 16px;
+  padding: 12px;
+}
+
+.disputeWsPanel--chat {
+  padding: 12px 12px 10px;
+}
+
+.disputeWsPanel__title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.disputeWsDivider {
+  height: 1px;
+  background: var(--border2);
+  margin: 10px 0;
+}
+
+.disputeWsBlock {
+  display: grid;
+  gap: 6px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border2);
+}
+
+.disputeWsBlock:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.disputeWsLabel {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.disputeWsValue {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.disputeWsMeta {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.disputeWsPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.disputeWsEmpty {
+  opacity: 0.8;
+  padding: 6px 0;
+}
+
+.disputeWsList {
+  display: grid;
+  gap: 10px;
+}
+
+.disputeWsItem,
+.disputeWsAudit {
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  background: var(--surface1);
+  padding: 10px;
+}
+
+.disputeWsItem__top,
+.disputeWsAudit__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.disputeWsItem__msg,
+.disputeWsAudit__summary {
+  opacity: 0.9;
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+
+.disputeWsFiles {
+  margin-top: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.disputeWsFile a {
+  color: inherit;
+  border-bottom: 1px solid var(--border3);
+  text-decoration: none;
+}
+
+.disputeWsFile a:hover {
+  border-bottom-color: var(--text);
+}
+
+.disputeWsChat {
+  display: grid;
+  gap: 10px;
+}
+
+.disputeWsChatList {
+  max-height: min(62vh, 640px);
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  background: var(--bg1);
+}
+
+.disputeWsMsg {
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  background: var(--surface1);
+  padding: 10px;
+}
+
+.disputeWsMsg.isInternal {
+  border-color: rgba(124, 58, 237, 0.35);
+  background: rgba(124, 58, 237, 0.10);
+}
+
+.disputeWsMsg.isSystem {
+  border-color: rgba(107, 114, 128, 0.35);
+  background: rgba(107, 114, 128, 0.10);
+}
+
+.disputeWsMsg__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.disputeWsMsg__author {
+  font-weight: 700;
+  font-size: 12px;
+  opacity: 0.95;
+}
+
+.disputeWsMsg__text {
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+
+.disputeWsChatActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.disputeWsChatComposer {
+  display: grid;
+  gap: 8px;
+}
+
+.disputeWsChatComposerRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.disputeWsActionsRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.disputeWsBtn {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  color: var(--text);
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 650;
+  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease, opacity 160ms ease;
+}
+
+.disputeWsBtn:hover {
+  transform: translateY(-1px);
+  border-color: var(--border3);
+  background: var(--surface2);
+}
+
+.disputeWsBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.disputeWsBtn--primary {
+  border-color: rgba(124, 58, 237, 0.55);
+  background: rgba(124, 58, 237, 0.18);
+}
+
+.disputeWsField {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.disputeWsSelect,
+.disputeWsInput,
+.disputeWsTextarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  color: var(--text);
+  padding: 10px 12px;
+  outline: none;
+}
+
+.disputeWsField .customSelectLabel {
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.disputeWsField .customSelectButton {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--bg1);
+}
+
+.disputeWsField .customSelectButton:hover {
+  border-color: var(--border3);
+  background: var(--surface2);
+}
+
+.disputeWsField .customSelectButton:focus-visible {
+  border-color: var(--border3);
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.12);
+}
+
+.disputeWsTextarea {
+  resize: vertical;
+}
+
+.disputeWsSelect:focus,
+.disputeWsInput:focus,
+.disputeWsTextarea:focus {
+  border-color: var(--border3);
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.12);
+}
+
+.disputeWsGrid2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.disputeWsChecklist {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border2);
+}
+
+.disputeWsCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0.9;
+}
+
+.disputeWsWarn {
+  margin-top: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.08);
+  padding: 10px 12px;
+  opacity: 0.95;
+}
+
+.disputeWsError {
+  margin-top: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.12);
+  padding: 10px 12px;
+  opacity: 0.98;
+  white-space: pre-wrap;
+}
+
+.disputeWsOverlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 3000;
+}
+
+.disputeWsModal {
+  width: min(640px, 100%);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  box-shadow: var(--shadow-md);
+  padding: 14px;
+}
+
+.disputeWsModal__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--border2);
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+}
+
+.disputeWsModal__title {
+  font-weight: 700;
+}
+
+.disputeWsModal__close {
+  width: 32px;
+  height: 32px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.disputeWsModal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+@media (max-width: 1100px) {
+  .disputeWsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (pointer: coarse) {
+  .disputeWsBack {
+    width: var(--tap);
+    height: var(--tap);
+  }
+
+  .disputeWsModal__close {
+    width: var(--tap);
+    height: var(--tap);
+  }
+}
+
+@media (hover: none) {
+  .disputeWsBack:hover {
+    transform: none;
+  }
+}
+

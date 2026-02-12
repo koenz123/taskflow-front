@@ -29,11 +29,7 @@ async function tryLibreTranslate(url: string, q: string, source: TranslateLocale
   return translatedText
 }
 
-const endpoints = [
-  'https://libretranslate.com/translate',
-  'https://translate.argosopentech.com/translate',
-  'https://libretranslate.de/translate',
-] as const
+const endpoints = ['/api/translate'] as const
 
 export async function translateText(q: string, source: TranslateLocale, target: TranslateLocale) {
   const text = q.trim()

@@ -1,0 +1,393 @@
+.disputesInboxPage {
+  padding: 0;
+}
+
+.disputesInboxContainer {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.disputesInboxHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.disputesInboxTitle {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.disputesInboxSubtitle {
+  margin-top: 6px;
+  opacity: 0.85;
+}
+
+.disputesInboxFilters {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--card2);
+  margin-bottom: 12px;
+}
+
+.disputesInboxField {
+  display: grid;
+  gap: 6px;
+}
+
+.disputesInboxField__label {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.disputesInboxInput,
+.disputesInboxSelect,
+.disputesInboxFilters .customSelectButton {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  color: var(--text);
+  padding: 9px 10px;
+  outline: none;
+}
+
+.disputesInboxInput:focus,
+.disputesInboxSelect:focus,
+.disputesInboxFilters .customSelectButton:focus-visible {
+  border-color: var(--border3);
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.12);
+}
+
+/* Make CustomSelect labels match inbox style */
+.disputesInboxFilters .customSelectLabel {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.disputesInboxFilters .customSelectButton {
+  padding: 9px 10px;
+  border-radius: 12px;
+  background: var(--surface1);
+}
+
+.disputesInboxFilters .customSelectButton:hover {
+  border-color: var(--border3);
+  background: var(--surface2);
+}
+
+.disputesInboxCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 18px;
+  opacity: 0.9;
+  white-space: nowrap;
+}
+
+.disputesInboxReset {
+  align-self: end;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  color: var(--text);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.disputesInboxReset:hover {
+  transform: translateY(-1px);
+  border-color: var(--border3);
+  background: var(--surface2);
+}
+
+.disputesInboxTableWrap {
+  border: 1px solid var(--border);
+  background: var(--card2);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.disputesInboxRow {
+  display: grid;
+  grid-template-columns: 1.4fr 0.6fr 1.1fr 0.7fr 0.9fr 0.55fr 0.55fr 0.55fr 0.5fr;
+  gap: 0;
+  align-items: stretch;
+}
+
+.disputesInboxRow--head {
+  background: var(--surface1);
+  border-bottom: 1px solid var(--border2);
+}
+
+.disputesInboxRow--body {
+  cursor: pointer;
+  border-bottom: 1px solid var(--border2);
+}
+
+.disputesInboxRow--body:hover {
+  background: var(--surface1);
+}
+
+.disputesInboxRow--body:last-child {
+  border-bottom: none;
+}
+
+.disputesInboxCell {
+  padding: 10px 12px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-right: 1px solid var(--border2);
+}
+
+.disputesInboxRow .disputesInboxCell:last-child {
+  border-right: none;
+  justify-content: flex-end;
+}
+
+.disputesInboxRow--head .disputesInboxCell {
+  font-size: 12px;
+  opacity: 0.8;
+  font-weight: 650;
+}
+
+.disputesInboxEmpty {
+  padding: 14px 12px;
+  opacity: 0.85;
+}
+
+.disputesInboxOrder {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.disputesInboxOrder__id {
+  font-size: 12px;
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+}
+
+.disputesInboxOrder__title {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disputesInboxAmount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.disputesInboxParties {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.disputesInboxParty {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.disputesInboxParty__role {
+  font-size: 12px;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.disputesInboxParty__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disputesInboxReason {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.9;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disputesInboxMeta {
+  font-size: 12px;
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+}
+
+.disputesInboxPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.disputesInboxPill.isOpen {
+  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.disputesInboxPill.isReview {
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.10);
+}
+
+.disputesInboxPill.isNeedInfo {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.10);
+}
+
+.disputesInboxSla {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.disputesInboxSla.isNear {
+  color: rgba(251, 191, 36, 0.95);
+}
+
+:root[data-theme='light'] .disputesInboxSla.isNear {
+  color: rgba(161, 98, 7, 0.95);
+}
+
+.disputesInboxSla.isOverdue {
+  color: rgba(239, 68, 68, 0.95);
+}
+
+.disputesInboxUnanswered {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.disputesInboxUnanswered.isHot {
+  font-weight: 800;
+}
+
+.disputesInboxRepeat {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.disputesInboxCell--actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 1100px) {
+  .disputesInboxFilters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .disputesInboxRow {
+    grid-template-columns: 1.2fr 0.6fr 1.2fr 0.9fr 1fr 0.8fr;
+  }
+  /* Hide SLA / Unanswered / Repeat on tablets; keep action button visible */
+  .disputesInboxRow .disputesInboxCell:nth-child(6),
+  .disputesInboxRow .disputesInboxCell:nth-child(7),
+  .disputesInboxRow .disputesInboxCell:nth-child(8) {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .disputesInboxFilters {
+    grid-template-columns: 1fr;
+  }
+
+  .disputesInboxCheck {
+    padding-top: 6px;
+  }
+
+  .disputesInboxReset {
+    width: 100%;
+  }
+
+  .disputesInboxTableWrap {
+    border: 0;
+    background: transparent;
+    overflow: visible;
+  }
+
+  .disputesInboxRow--head {
+    display: none;
+  }
+
+  /* Override tablet column hiding: in mobile card view we need all fields */
+  .disputesInboxRow .disputesInboxCell:nth-child(n + 7) {
+    display: flex;
+  }
+
+  .disputesInboxRow--body {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      'order order'
+      'amount status'
+      'parties parties'
+      'opened opened'
+      'sla unanswered'
+      'repeat actions';
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    background: var(--card2);
+    margin-bottom: 10px;
+  }
+
+  .disputesInboxCell {
+    border-right: 0;
+    padding: 10px 12px;
+  }
+
+  .disputesInboxRow--body .disputesInboxCell:nth-child(1) {
+    grid-area: order;
+  }
+  .disputesInboxRow--body .disputesInboxCell:nth-child(2) {
+    grid-area: amount;
+  }
+  .disputesInboxRow--body .disputesInboxCell:nth-child(3) {
+    grid-area: parties;
+  }
+  .disputesInboxRow--body .disputesInboxCell:nth-child(4) {
+    grid-area: status;
+    justify-content: flex-end;
+  }
+  .disputesInboxRow--body .disputesInboxCell:nth-child(5) {
+    grid-area: opened;
+  }
+  .disputesInboxRow--body .disputesInboxCell:nth-child(6) {
+    grid-area: sla;
+  }
+  .disputesInboxRow--body .disputesInboxCell:nth-child(7) {
+    grid-area: unanswered;
+    justify-content: flex-end;
+  }
+  .disputesInboxRow--body .disputesInboxCell:nth-child(8) {
+    grid-area: repeat;
+  }
+  .disputesInboxRow--body .disputesInboxCell:nth-child(9) {
+    grid-area: actions;
+    justify-content: flex-end;
+  }
+
+  .disputesInboxCell--actions .linkBtn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+

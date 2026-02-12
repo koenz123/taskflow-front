@@ -1,14 +1,47 @@
 .appShell {
   min-height: 100vh;
   display: flex;
+  position: relative;
+}
+
+.appShell__main {
+  flex: 1;
+  display: flex;
   flex-direction: column;
+  margin-left: 240px;
+  min-width: 0;
+  transition: margin-left 300ms ease;
 }
 
 .appShell__content {
-  padding: 24px;
-  max-width: 1200px;
-  margin: 0 auto;
+  padding: 32px;
   width: 100%;
   flex: 1;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
+/* Адаптация под свернутый сайдбар */
+@media (min-width: 1025px) {
+  .sidebar--collapsed ~ .appShell__main {
+    margin-left: 64px;
+  }
+}
+
+/* Адаптация для планшетов и мобильных */
+@media (max-width: 1024px) {
+  .appShell__main {
+    margin-left: 0;
+  }
+
+  .appShell__content {
+    padding: 24px 16px;
+  }
+}
+
+/* Mobile/tablet bottom navigation */
+@media (max-width: 1024px) {
+  .appShell__content {
+    padding-bottom: calc(24px + var(--bottomNavHeight) + env(safe-area-inset-bottom));
+  }
+}

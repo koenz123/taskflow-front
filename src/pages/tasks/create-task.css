@@ -1,32 +1,129 @@
 .createTaskPage {
-  display: grid;
-  place-items: start center;
-  padding: 24px 16px;
+  padding: 0;
 }
 
 .createTaskCard {
-  width: min(720px, 100%);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 18px;
-  padding: 20px;
-  background: rgba(255, 255, 255, 0.05);
-  /* Softer shadow to avoid dark “band” near footer */
-  box-shadow:
-    0 18px 50px rgba(0, 0, 0, 0.16),
-    0 0 90px rgba(124, 58, 237, 0.08),
-    0 0 90px rgba(6, 182, 212, 0.06);
+  width: min(900px, 100%);
+  margin: 0 auto;
+  padding: clamp(16px, 2.4vw, 28px);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.createTaskCard .form {
+  display: grid;
+  gap: 12px;
 }
 
 .createTaskTitle {
-  margin: 0 0 14px;
-  font-size: 28px;
-  line-height: 1.2;
+  margin: 0 0 8px;
+  font-size: clamp(22px, 2.2vw, 30px);
+  line-height: 1.25;
+}
+
+.createTaskSubtitle {
+  margin: 0 0 18px;
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 .grid2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+  align-items: start;
+}
+
+.deliverablesBox {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card2);
+}
+
+.deliverablesList {
+  display: grid;
+  gap: 0;
+  max-height: 164px; /* stable block height */
+  overflow: auto;
+  padding-right: 4px; /* avoid scrollbar overlay */
+}
+
+.deliverablesRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 4px;
+  border-top: 1px solid var(--border2);
+}
+
+.deliverablesRow--first {
+  border-top: none;
+}
+
+.deliverablesRow__platform {
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.deliverablesRow__controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.deliverablesRow__btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease, opacity 160ms ease;
+}
+
+.deliverablesRow__btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(124, 58, 237, 0.45);
+  background: rgba(124, 58, 237, 0.12);
+}
+
+.deliverablesRow__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.deliverablesRow__input {
+  width: 52px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card2);
+  color: var(--text);
+  padding: 0 10px;
+  text-align: center;
+}
+
+.deliverablesRow__input:focus {
+  outline: none;
+  border-color: rgba(124, 58, 237, 0.5);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .field {
@@ -39,6 +136,310 @@
   opacity: 0.9;
 }
 
+.field__labelRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.createTaskLabelWithHelp {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Executor mode selector (3 options) */
+.executorModeGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.executorModeOption {
+  position: relative;
+  border: 1px solid var(--border);
+  background: var(--card2);
+  border-radius: 14px;
+  padding: 12px 12px 11px;
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+  display: grid;
+  gap: 6px;
+  min-height: 88px;
+}
+
+.executorModeOption:hover {
+  transform: translateY(-1px);
+  border-color: rgba(124, 58, 237, 0.55);
+  background: rgba(124, 58, 237, 0.10);
+}
+
+.executorModeOption--active {
+  border-color: rgba(124, 58, 237, 0.85);
+  background: rgba(124, 58, 237, 0.14);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+}
+
+.executorModeOption:focus-within {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+:root[data-theme='light'] .executorModeOption {
+  border-color: var(--border3);
+  background: var(--bg1);
+}
+
+:root[data-theme='light'] .executorModeOption:hover {
+  border-color: rgba(124, 58, 237, 0.65);
+  background: rgba(124, 58, 237, 0.10);
+}
+
+:root[data-theme='light'] .executorModeOption--active {
+  border-color: rgba(124, 58, 237, 0.95);
+  background: rgba(124, 58, 237, 0.12);
+  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.16);
+}
+
+.executorModeOption__input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.executorModeOption__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.executorModeOption__desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .executorModeGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Help icon ("?") shouldn't touch previous rows on hover */
+.helpTip--withLabel .helpTip__btn {
+  margin-top: 1px;
+}
+
+.helpTip--withLabel .helpTip__btn:hover {
+  transform: translateY(0);
+}
+
+.field__counter {
+  font-size: 12px;
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.field__control {
+  position: relative;
+}
+
+.field__controlRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.field__controlRow .field__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.referenceActionsRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.field__refBtn--full {
+  width: 100%;
+}
+
+.field__refBtn {
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  color: var(--text);
+  padding: 0 12px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease, opacity 160ms ease;
+}
+
+.field__refBtn:hover {
+  transform: translateY(-1px);
+  border-color: var(--border3);
+  background: var(--surface2);
+}
+
+.field__refBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.field__refBtn--inactive {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.field__refBtn--inactive:hover {
+  transform: none;
+  border-color: var(--border);
+  background: var(--surface1);
+}
+
+.createTaskOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px;
+  background: var(--overlay);
+}
+
+.createTaskModal {
+  width: min(560px, calc(100dvw - 28px));
+  max-height: min(82vh, 760px);
+  overflow: auto;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--bg1);
+  box-shadow: var(--shadow-md);
+  padding: 14px 14px 16px;
+  position: relative;
+}
+
+.createTaskModal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 2px 12px;
+  border-bottom: 1px solid var(--border2);
+  margin-bottom: 12px;
+}
+
+.createTaskModal__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--text);
+  line-height: 1.25;
+  letter-spacing: 0.2px;
+  min-width: 0;
+}
+
+.createTaskModal__close {
+  width: 32px;
+  height: 32px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.createTaskModal__close:hover {
+  transform: translateY(-1px);
+  border-color: var(--border3);
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.createTaskModal__content {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text);
+  white-space: pre-line;
+}
+
+.createTaskModal__actions {
+  margin-top: 14px;
+}
+
+.field__refChip {
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card2);
+  color: var(--text);
+  max-width: 320px;
+}
+
+.field__refName {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.field__refRemove {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 8px;
+}
+
+.field__refRemove:hover {
+  color: var(--text);
+  background: var(--surface2);
+}
+
+.field__counterInField {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  font-size: 12px;
+  opacity: 0.78;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card2);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.field__counter--danger {
+  color: #ffb4b4;
+  opacity: 0.95;
+}
+
 .field__hint {
   opacity: 0.7;
   font-weight: 400;
@@ -47,13 +448,106 @@
 .field__input,
 .field__textarea {
   width: 100%;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(0, 0, 0, 0.12);
-  color: inherit;
-  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card2);
+  color: var(--text);
+  padding: 12px 14px;
   outline: none;
   resize: vertical;
+}
+
+.field__control .field__input {
+  padding-right: 74px;
+}
+
+.field__control--textarea .field__textarea {
+  padding-right: 90px;
+  padding-bottom: 32px;
+}
+
+.field__bottomRight {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 2;
+}
+
+.field__bottomRight .field__counterInField {
+  position: static;
+}
+
+.field__fileInputHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.field__attachBtn {
+  position: static;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease, opacity 160ms ease;
+}
+
+.field__attachBtn:hover {
+  transform: translateY(-1px);
+  border-color: var(--border3);
+  background: var(--surface2);
+}
+
+.field__attachBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.field__fileChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(360px, 100%);
+  min-width: 0;
+  overflow: hidden;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card2);
+  color: var(--text);
+}
+
+.field__fileName {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.field__fileRemove {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 8px;
+}
+
+.field__fileRemove:hover {
+  color: var(--text);
+  background: var(--surface2);
 }
 
 .field__textarea {
@@ -62,7 +556,7 @@
 
 .field__input:focus,
 .field__textarea:focus {
-  border-color: rgba(255, 255, 255, 0.22);
+  border-color: var(--border3);
   box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.18);
 }
 
@@ -73,7 +567,7 @@
 }
 
 .actionsRow {
-  margin-top: 6px;
+  margin-top: 14px;
   display: flex;
   gap: 10px;
   align-items: center;
@@ -81,33 +575,58 @@
 }
 
 .primaryBtn {
+  height: 44px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background:
-    radial-gradient(120% 180% at 20% 0%, rgba(124, 58, 237, 0.45), transparent 60%),
-    radial-gradient(120% 180% at 90% 10%, rgba(6, 182, 212, 0.35), transparent 62%),
-    rgba(255, 255, 255, 0.045);
-  color: inherit;
-  padding: 12px 14px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  color: var(--text);
+  padding: 0 16px;
   cursor: pointer;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.25);
+  transition: transform 200ms ease, background-color 200ms ease, border-color 200ms ease, color 200ms ease;
+}
+
+.primaryBtn.primaryBtn--plain {
+  /* Ensure no gradient leaks from other pages' CSS */
+  background: var(--surface1);
+  background-image: none;
+}
+
+.btnArrow {
+  opacity: 0.85;
+  margin-left: 6px;
 }
 
 .primaryBtn:hover {
-  transform: translateY(-1px);
-  border-color: rgba(255, 255, 255, 0.22);
-  filter: brightness(1.05);
+  transform: scale(1.03);
+  border-color: var(--border3);
+  background: var(--surface2);
+}
+
+.primaryBtn.primaryBtn--plain:hover {
+  background: var(--surface2);
+  background-image: none;
 }
 
 .secondaryLink {
   color: inherit;
   text-decoration: none;
   opacity: 0.9;
+  display: inline-flex;
+  height: 44px;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: transparent;
 }
 
 .secondaryLink:hover {
   opacity: 1;
-  text-decoration: underline;
+  text-decoration: none;
+  transform: scale(1.03);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.18);
 }
 
 @media (max-width: 720px) {
@@ -116,3 +635,44 @@
   }
 }
 
+@media (pointer: coarse) {
+  .deliverablesRow__btn {
+    width: var(--tap);
+    height: var(--tap);
+  }
+
+  .deliverablesRow__input {
+    height: var(--tap);
+    width: 64px;
+  }
+
+  .field__attachBtn {
+    min-height: var(--tap);
+    padding: 0 14px;
+  }
+
+  .field__fileChip {
+    min-height: var(--tap);
+    padding: 0 12px;
+  }
+
+  .field__fileRemove {
+    min-width: var(--tap);
+    min-height: var(--tap);
+    display: grid;
+    place-items: center;
+    padding: 0;
+    margin-right: -8px;
+  }
+}
+
+@media (hover: none) {
+  .deliverablesRow__btn:hover,
+  .field__attachBtn:hover,
+  .primaryBtn:hover,
+  .secondaryLink:hover,
+  .executorModeOption:hover {
+    transform: none;
+    box-shadow: none;
+  }
+}
