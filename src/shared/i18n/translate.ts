@@ -10,6 +10,8 @@ export function guessLocale(text: string): TranslateLocale {
 
 type LibreResponse = { translatedText?: string }
 
+const API_BASE = import.meta.env.VITE_API_BASE ?? '/api'
+
 async function tryLibreTranslate(url: string, q: string, source: TranslateLocale, target: TranslateLocale) {
   const res = await fetch(url, {
     method: 'POST',
@@ -29,7 +31,7 @@ async function tryLibreTranslate(url: string, q: string, source: TranslateLocale
   return translatedText
 }
 
-const endpoints = ['/api/translate'] as const
+const endpoints = [`${API_BASE}/translate`] as const
 
 export async function translateText(q: string, source: TranslateLocale, target: TranslateLocale) {
   const text = q.trim()
