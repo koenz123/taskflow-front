@@ -40,6 +40,10 @@ import { getBlob, putBlob } from '@/shared/lib/blobStore'
 import { HelpTip } from '@/shared/ui/help-tip/HelpTip'
 import type { Task } from '@/entities/task/model/task'
 import { createId } from '@/shared/lib/id'
+import { notifyToTelegramAndUi } from '@/shared/notify/notify'
+import { api } from '@/shared/api/api'
+
+const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
 function formatBudget(amount?: number, currency?: string) {
   if (!amount) return null
@@ -160,6 +164,9 @@ export function TaskDetailsPage() {
   const { t, locale } = useI18n()
   const auth = useAuth()
   const toast = useToast()
+  const user = auth.user!
+  const telegramUserId = user.telegramUserId ?? null
+  const toastUi = (msg: string, tone?: 'success' | 'info' | 'error') => toast.showToast({ message: msg, tone })
   const devMode = useDevMode()
   const navigate = useNavigate()
   const location = useLocation()
@@ -185,7 +192,7 @@ export function TaskDetailsPage() {
   const submissions = useSubmissions()
   const disputes = useDisputes()
   const assignments = useTaskAssignments()
-  const currentUser = auth.user
+  const currentUser = user
   const requiresCompletionLinks = (task?.executorMode ?? 'blogger_ad') !== 'customer_post'
   const requiresUploadVideo = (task?.executorMode ?? null) === 'customer_post'
   const platforms = useMemo(() => (requiresCompletionLinks ? requestedCompletionTargets(task) : []), [requiresCompletionLinks, task])
@@ -298,13 +305,14 @@ export function TaskDetailsPage() {
     setCopyrightHelpOpen(false)
     setSubmitConfirmOpen(false)
     // Best-effort: translate full content in details view.
+    const userId = user.id
     void autoTranslateIfNeeded(taskId, {
       title: task.title,
       shortDescription: task.shortDescription,
       ...(task.requirements ? { requirements: task.requirements } : {}),
       description: task.description,
-    })
-  }, [requiresCompletionLinks, taskId, locale, task])
+    }, userId)
+  }, [requiresCompletionLinks, taskId, locale, task, user.id])
 
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 30_000)
@@ -343,8 +351,8 @@ export function TaskDetailsPage() {
     if (
       fromCreateDraft &&
       task?.status === 'draft' &&
-      auth.user?.role === 'customer' &&
-      auth.user.id === task.createdByUserId
+      user.role === 'customer' &&
+      user.id === task.createdByUserId
     ) {
       navigate(paths.taskCreate, { state: { draft: task } })
       return
@@ -573,9 +581,15 @@ export function TaskDetailsPage() {
   }
 
   const approveReviewContract = (contractId: string) => {
-    const contract = contractRepo.getById(contractId)
+    const contract = contracts.find((c) => c.id === contractId) ?? null
     if (!contract) return
     if (!auth.user || auth.user.role !== 'customer') return
+
+    if (USE_API) {
+      void api.post(`/contracts/${contract.id}/approve`, {}).catch(() => {})
+      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.workApproved'), tone: 'success' })
+      return
+    }
 
     const assignment = taskAssignmentRepo.getForTaskExecutor(contract.taskId, contract.executorId)
     if (!assignment?.startedAt) {
@@ -605,11 +619,11 @@ export function TaskDetailsPage() {
     })
 
     recomputeTaskStatus(contract.taskId)
-    toast.showToast({ tone: 'success', message: t('toast.workApproved') })
+    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.workApproved'), tone: 'success' })
   }
 
   const requestReviewRevision = (contractId: string, message: string) => {
-    const contract = contractRepo.getById(contractId)
+    const contract = contracts.find((c) => c.id === contractId) ?? null
     if (!contract) return
     if (!auth.user || auth.user.role !== 'customer') return
 
@@ -617,6 +631,12 @@ export function TaskDetailsPage() {
     const used = contract.revisionUsed ?? 0
     if (included <= 0) return
     if (used >= included) return
+
+    if (USE_API) {
+      void api.post(`/contracts/${contract.id}/revision`, { message }).catch(() => {})
+      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.revisionRequested'), tone: 'info' })
+      return
+    }
 
     contractRepo.setStatus(contract.id, 'revision_requested')
     contractRepo.incrementRevisionUsed(contract.id)
@@ -635,7 +655,7 @@ export function TaskDetailsPage() {
     })
 
     recomputeTaskStatus(contract.taskId)
-    toast.showToast({ tone: 'info', message: t('toast.revisionRequested') })
+    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.revisionRequested'), tone: 'info' })
   }
 
   const handleAssignApplication = (applicationId: string, opts?: { bypassNoStartConfirm?: boolean }) => {
@@ -647,6 +667,12 @@ export function TaskDetailsPage() {
     const app = taskApplications.find((x) => x.id === applicationId) ?? null
     if (!app || app.status !== 'pending') return
     if (task.assignedExecutorIds.includes(app.executorUserId)) return
+
+    if (USE_API) {
+      void api.post(`/applications/${applicationId}/select`, {}).catch(() => {})
+      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.executorAssigned'), tone: 'success' })
+      return
+    }
 
     const prevNoStart = noStartViolationCountLast90d(app.executorUserId)
     if (prevNoStart >= 2 && !opts?.bypassNoStartConfirm) {
@@ -714,23 +740,27 @@ export function TaskDetailsPage() {
       }
     }
 
-    toast.showToast({ tone: 'success', message: t('toast.executorAssigned') })
+    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.executorAssigned'), tone: 'success' })
   }
 
   const handleRejectApplication = (applicationId: string) => {
     if (!isPostedByMe) return
     applicationRepo.reject(applicationId)
-    toast.showToast({ tone: 'info', message: t('toast.applicationRejected') })
+    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.applicationRejected'), tone: 'info' })
   }
 
   const handleFinalPublish = () => {
     if (!isPostedByMe) return
     if (task.status !== 'draft') return
-    taskRepo.update(id, (prev) => ({
-      ...prev,
-      status: 'open',
-    }))
-    toast.showToast({ tone: 'success', message: t('toast.taskPublished') })
+    if (USE_API) {
+      void api.post(`/tasks/${id}/publish`, {}).catch(() => {})
+    } else {
+      taskRepo.update(id, (prev) => ({
+        ...prev,
+        status: 'open',
+      }))
+    }
+    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.taskPublished'), tone: 'success' })
   }
   const isDraftPublishStep = isPostedByMe && task.status === 'draft'
   const hasBottomActions = isDraftPublishStep || showSingleDeleteCta || canDelete || devMode.enabled
@@ -813,37 +843,46 @@ export function TaskDetailsPage() {
     if (!validated) return
     if (!myContract) return
     const { files, firstUrl, recipientUserId, taskCompletionLinks } = validated
-    const submission = submissionRepo.create({
-      contractId: myContract.id,
-      message: submissionMessage.trim() || undefined,
-      files,
-    })
-    contractRepo.setStatus(myContract.id, 'submitted')
-    contractRepo.setLastSubmission(myContract.id, submission.id)
-    if (auth.user) {
-      taskAssignmentRepo.markSubmitted(id, auth.user.id)
-    }
-    taskRepo.update(id, (prev) => ({
-      ...prev,
-      status: 'review',
-      reviewSubmittedAt: new Date().toISOString(),
-      completionVideoUrl: firstUrl || undefined,
-      completionLinks: taskCompletionLinks,
-    }))
-    if (recipientUserId && auth.user) {
-      notificationRepo.addTaskSubmitted({
-        recipientUserId,
-        actorUserId: auth.user.id,
-        taskId: id,
-        completionVideoUrl: firstUrl || undefined,
+    if (USE_API) {
+      void api
+        .post(`/contracts/${myContract.id}/submissions`, {
+          message: submissionMessage.trim() || undefined,
+          files,
+        })
+        .catch(() => {})
+    } else {
+      const submission = submissionRepo.create({
+        contractId: myContract.id,
+        message: submissionMessage.trim() || undefined,
+        files,
       })
+      contractRepo.setStatus(myContract.id, 'submitted')
+      contractRepo.setLastSubmission(myContract.id, submission.id)
+      if (auth.user) {
+        taskAssignmentRepo.markSubmitted(id, auth.user.id)
+      }
+      taskRepo.update(id, (prev) => ({
+        ...prev,
+        status: 'review',
+        reviewSubmittedAt: new Date().toISOString(),
+        completionVideoUrl: firstUrl || undefined,
+        completionLinks: taskCompletionLinks,
+      }))
+      if (recipientUserId && auth.user) {
+        notificationRepo.addTaskSubmitted({
+          recipientUserId,
+          actorUserId: auth.user.id,
+          taskId: id,
+          completionVideoUrl: firstUrl || undefined,
+        })
+      }
     }
     setSubmissionMessage('')
     setUploadVideo(null)
     setCopyrightWaiverAccepted(false)
     setCopyrightWaiverTouched(false)
     setSubmitConfirmOpen(false)
-    toast.showToast({ tone: 'success', message: t('toast.submitted') })
+    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.submitted'), tone: 'success' })
     setSubmittedModalOpen(true)
   }
 
@@ -961,8 +1000,11 @@ export function TaskDetailsPage() {
                         type="button"
                         className="taskDetailsButton taskDetailsButton--primary"
                         onClick={() => {
-                          if (!auth.user) return
-                          taskAssignmentRepo.startWork(id, auth.user.id)
+                          if (USE_API) {
+                            void api.post(`/assignments/${id}/start`, {}).catch(() => {})
+                          } else {
+                            taskAssignmentRepo.startWork(id, user.id)
+                          }
                         }}
                       >
                         {locale === 'ru' ? 'Начать работу' : 'Start work'}
@@ -997,8 +1039,7 @@ export function TaskDetailsPage() {
                         type="button"
                         className="taskDetailsButton"
                         onClick={() => {
-                          if (!auth.user) return
-                          taskAssignmentRepo.endPauseEarly(id, auth.user.id)
+                          taskAssignmentRepo.endPauseEarly(id, user.id)
                         }}
                       >
                         {locale === 'ru' ? 'Снять паузу' : 'End pause'}
@@ -1053,22 +1094,21 @@ export function TaskDetailsPage() {
               open={pauseModalOpen}
               onClose={() => setPauseModalOpen(false)}
               onSubmit={({ reasonId, durationHours, comment }) => {
-                if (!auth.user) return
                 if (!task.createdByUserId) return
                 taskAssignmentRepo.requestPause({
                   taskId: id,
-                  executorId: auth.user.id,
+                  executorId: user.id,
                   reasonId,
                   comment,
                   durationMs: Math.round(durationHours * 60 * 60 * 1000),
                 })
                 notificationRepo.addTaskPauseRequested({
                   recipientUserId: task.createdByUserId,
-                  actorUserId: auth.user.id,
+                  actorUserId: user.id,
                   taskId: id,
                   message: comment || undefined,
                 })
-                toast.showToast({ tone: 'success', message: t('toast.pauseRequested') })
+                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseRequested'), tone: 'success' })
                 setPauseModalOpen(false)
               }}
             />
@@ -1216,27 +1256,26 @@ export function TaskDetailsPage() {
                       type="button"
                       className="taskDetailsButton"
                       onClick={() => {
-                        if (!auth.user) return
                         if (!task.createdByUserId) return
 
                         // Ensure assignment exists and is started.
-                        const existingA = taskAssignmentRepo.getForTaskExecutor(id, auth.user.id)
+                        const existingA = taskAssignmentRepo.getForTaskExecutor(id, user.id)
                         if (!existingA) {
-                          taskAssignmentRepo.createPendingStart({ taskId: id, executorId: auth.user.id })
+                          taskAssignmentRepo.createPendingStart({ taskId: id, executorId: user.id })
                         }
-                        const a0 = taskAssignmentRepo.getForTaskExecutor(id, auth.user.id)
+                        const a0 = taskAssignmentRepo.getForTaskExecutor(id, user.id)
                         if (a0?.status === 'pending_start') {
-                          taskAssignmentRepo.startWork(id, auth.user.id)
+                          taskAssignmentRepo.startWork(id, user.id)
                         }
 
                         // Ensure contract exists.
-                        const existingContract = contractRepo.getForTaskExecutor(id, auth.user.id)
+                        const existingContract = contractRepo.getForTaskExecutor(id, user.id)
                         const contract =
                           existingContract ??
                           contractRepo.createActive({
                             taskId: id,
                             clientId: task.createdByUserId,
-                            executorId: auth.user.id,
+                            executorId: user.id,
                             escrowAmount: task.budgetAmount ?? 0,
                             revisionIncluded: 2,
                           })
@@ -1262,7 +1301,7 @@ export function TaskDetailsPage() {
                         })
                         contractRepo.setStatus(contract.id, 'submitted')
                         contractRepo.setLastSubmission(contract.id, submission.id)
-                        taskAssignmentRepo.markSubmitted(id, auth.user.id)
+                        taskAssignmentRepo.markSubmitted(id, user.id)
 
                         taskRepo.update(id, (prev) => ({
                           ...prev,
@@ -1276,7 +1315,7 @@ export function TaskDetailsPage() {
 
                         notificationRepo.addTaskSubmitted({
                           recipientUserId: task.createdByUserId,
-                          actorUserId: auth.user.id,
+                          actorUserId: user.id,
                           taskId: id,
                           completionVideoUrl: demoUrl,
                         })
@@ -1534,14 +1573,13 @@ export function TaskDetailsPage() {
                                 type="button"
                                 className="taskDetailsApplication__actionButton taskDetailsApplication__actionButton--primary"
                                 onClick={() => {
-                                  if (!auth.user) return
                                   taskAssignmentRepo.acceptPause(task.id, a.executorId)
                                   notificationRepo.addTaskPauseAccepted({
                                     recipientUserId: a.executorId,
-                                    actorUserId: auth.user.id,
+                                    actorUserId: user.id,
                                     taskId: task.id,
                                   })
-                                  toast.showToast({ tone: 'success', message: t('toast.pauseAccepted') })
+                                  void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseAccepted'), tone: 'success' })
                                 }}
                               >
                                 {locale === 'ru' ? 'Принять паузу' : 'Accept pause'}
@@ -1550,14 +1588,13 @@ export function TaskDetailsPage() {
                                 type="button"
                                 className="taskDetailsApplication__actionButton"
                                 onClick={() => {
-                                  if (!auth.user) return
                                   taskAssignmentRepo.rejectPause(task.id, a.executorId)
                                   notificationRepo.addTaskPauseRejected({
                                     recipientUserId: a.executorId,
-                                    actorUserId: auth.user.id,
+                                    actorUserId: user.id,
                                     taskId: task.id,
                                   })
-                                  toast.showToast({ tone: 'info', message: t('toast.pauseRejected') })
+                                  void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseRejected'), tone: 'info' })
                                 }}
                               >
                                 {locale === 'ru' ? 'Отклонить' : 'Reject'}
@@ -1652,19 +1689,25 @@ export function TaskDetailsPage() {
                     if (!executorRestrictionRepo.canRespond(auth.user.id, Date.now()).ok) return
                     const msg = applicationMessage.trim()
                     setApplying(true)
-                    applicationRepo.create({
-                      taskId: id,
-                      executorUserId: auth.user.id,
-                      message: msg || undefined,
-                    })
-                    notificationRepo.addTaskApplication({
-                      recipientUserId: task.createdByUserId,
-                      actorUserId: auth.user.id,
-                      taskId: id,
-                    })
+                    if (USE_API) {
+                      void api.post(`/tasks/${id}/applications`, { message: msg || undefined }).catch(() => {})
+                    } else {
+                      applicationRepo.create({
+                        taskId: id,
+                        executorUserId: auth.user.id,
+                        message: msg || undefined,
+                      })
+                    }
+                    if (!USE_API) {
+                      notificationRepo.addTaskApplication({
+                        recipientUserId: task.createdByUserId,
+                        actorUserId: auth.user.id,
+                        taskId: id,
+                      })
+                    }
                     setApplicationMessage('')
                     setApplying(false)
-                    toast.showToast({ tone: 'success', message: t('toast.applied') })
+                    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.applied'), tone: 'success' })
                   }}
                 >
                   {t('task.actions.apply')}
@@ -1887,7 +1930,6 @@ export function TaskDetailsPage() {
                                   type="button"
                                   className="taskDetailsApplication__actionButton taskDetailsApplication__actionButton--danger"
                                   onClick={() => {
-                                    if (!auth.user) return
                                     if (contract.status === 'disputed') {
                                       const existing = disputeRepo.getForContract(contract.id)
                                       if (existing) {
@@ -1905,12 +1947,12 @@ export function TaskDetailsPage() {
                                     }
                                     const dispute = disputeRepo.open({
                                       contractId: contract.id,
-                                      openedByUserId: auth.user.id,
+                                      openedByUserId: user.id,
                                       reason: { categoryId: 'universal', reasonId: 'other' },
                                     })
                                     notificationRepo.addDisputeOpened({
                                       recipientUserId: contract.executorId,
-                                      actorUserId: auth.user.id,
+                                      actorUserId: user.id,
                                       taskId: contract.taskId,
                                       disputeId: dispute.id,
                                     })
@@ -2343,7 +2385,6 @@ export function TaskDetailsPage() {
                 type="button"
                 className="profileBtn profileBtn--danger"
                 onClick={() => {
-                  if (!auth.user) return
                   const executorId = openDisputePrompt.executorId
                   setOpenDisputePrompt(null)
 
@@ -2366,14 +2407,14 @@ export function TaskDetailsPage() {
 
                   disputeRepo.open({
                     contractId: contract.id,
-                    openedByUserId: auth.user.id,
+                    openedByUserId: user.id,
                     reason: { categoryId: 'quality', reasonId: 'miss_deadline' },
                   })
                   const dispute = disputeRepo.getForContract(contract.id)
                   if (dispute) {
                     notificationRepo.addDisputeOpened({
                       recipientUserId: executorId,
-                      actorUserId: auth.user.id,
+                      actorUserId: user.id,
                       taskId: task.id,
                       disputeId: dispute.id,
                     })

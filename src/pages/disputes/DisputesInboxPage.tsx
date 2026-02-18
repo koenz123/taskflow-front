@@ -54,6 +54,7 @@ function fmtRemaining(ms: number) {
 export function DisputesInboxPage() {
   const auth = useAuth()
   const { locale } = useI18n()
+  const user = auth.user!
   const disputes = useDisputes()
   const contracts = useContracts()
   const tasks = useTasks()
@@ -67,7 +68,7 @@ export function DisputesInboxPage() {
     return () => window.clearInterval(id)
   }, [])
 
-  const allowed = auth.user?.role === 'arbiter' && auth.user.id === DEV_ARBITER_USER_ID
+  const allowed = user.role === 'arbiter' && user.id === DEV_ARBITER_USER_ID
 
   const [status, setStatus] = useState<StatusFilter>('all')
   const [minAmount, setMinAmount] = useState('')
@@ -185,19 +186,6 @@ export function DisputesInboxPage() {
     })
     return sorted
   }, [contractById, dateFrom, dateTo, disputes, maxAmount, minAmount, nearingSla, nowMs, sort, status])
-
-  if (!auth.user) {
-    return (
-      <main className="disputesInboxPage">
-        <div className="disputesInboxContainer">
-          <h1 className="disputesInboxTitle">{locale === 'ru' ? 'Очередь споров' : 'Disputes inbox'}</h1>
-          <p style={{ opacity: 0.85 }}>
-            <Link to={paths.login}>{locale === 'ru' ? 'Войти' : 'Sign in'}</Link>
-          </p>
-        </div>
-      </main>
-    )
-  }
 
   if (!allowed) {
     return (

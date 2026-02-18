@@ -16,13 +16,14 @@ import { StatusPill } from '@/shared/ui/status-pill/StatusPill'
 export function ArchivesPage() {
   const { t, locale } = useI18n()
   const auth = useAuth()
+  const user0 = auth.user!
   const devMode = useDevMode()
   const navigate = useNavigate()
   const tasks = useTasks()
   const [confirmRepostTaskId, setConfirmRepostTaskId] = useState<string | null>(null)
   const [confirmDeleteTaskId, setConfirmDeleteTaskId] = useState<string | null>(null)
 
-  const user = auth.user?.role === 'customer' ? auth.user : null
+  const user = user0.role === 'customer' ? user0 : null
 
   const archivedTasks = useMemo(() => {
     if (!user) return []
@@ -38,20 +39,7 @@ export function ArchivesPage() {
     [confirmDeleteTaskId, archivedTasks],
   )
 
-  if (!auth.user) {
-    return (
-      <main className="customerTasksPage">
-        <div className="customerTasksContainer">
-          <h1 className="customerTasksTitle">{t('customerTasks.archive.title')}</h1>
-          <p>
-            <Link to={paths.login}>{t('auth.signIn')}</Link>
-          </p>
-        </div>
-      </main>
-    )
-  }
-
-  if (auth.user.role !== 'customer') {
+  if (user0.role !== 'customer') {
     return (
       <main className="customerTasksPage">
         <div className="customerTasksContainer">

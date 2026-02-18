@@ -7,6 +7,7 @@ import type { TranslationKey } from '@/shared/i18n/translations'
 import './create-task.css'
 import type { LocalizedText, Task } from '@/entities/task/model/task'
 import { useAuth } from '@/shared/auth/AuthContext'
+import { api } from '@/shared/api/api'
 import { MultiSelect } from '@/shared/ui/multi-select/MultiSelect'
 import { CustomSelect } from '@/shared/ui/custom-select/CustomSelect'
 import { TASK_FORMAT_OPTIONS, TASK_PLATFORM_OPTIONS } from '@/entities/task/lib/taskMetaCatalog'
@@ -37,6 +38,7 @@ const FOREVER_EXPIRES_AT = '9999-12-31T23:59:59.999Z'
 const MAX_REFERENCE_VIDEO_MB = 12
 const MAX_REFERENCE_VIDEOS = 3
 const MAX_DESCRIPTION_FILES = 3
+const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
 type ReferenceVideoItem = {
   blobId: string
@@ -329,12 +331,12 @@ export function CreateTaskPage() {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setSubmitted(true)
     if (!isValid) return
 
-    if (!auth.user) {
+    if (auth.status === 'unauthenticated' || !auth.user) {
       navigate(paths.login)
       return
     }
@@ -357,7 +359,6 @@ export function CreateTaskPage() {
       })
       .filter((d) => d.platform.trim().length > 0)
     const nextData = {
-      createdByUserId: auth.user.id,
       executorMode: form.executorMode,
       deliverables: deliverables.length ? deliverables : undefined,
       title: toLocalizedText(form.title.trim(), locale),
@@ -380,20 +381,23 @@ export function CreateTaskPage() {
       budgetCurrency: isAi ? undefined : form.budgetCurrency,
       expiresAt,
       maxExecutors: maxExecutorsValue,
-      status: 'draft' as const,
     }
 
-    // If we're coming back from the final publish step, update the existing draft
-    // instead of creating duplicates.
-    const existingDraft = draft?.id ? taskRepo.getById(draft.id) : null
-    const task =
-      existingDraft && existingDraft.status === 'draft'
-        ? (taskRepo.update(existingDraft.id, (prev) => ({
-            ...prev,
-            ...nextData,
-            status: 'draft',
-          })) ?? existingDraft)
-        : taskRepo.create(nextData)
+    const task = USE_API
+      ? await api.post<Task>('/tasks', nextData)
+      : (() => {
+          // If we're coming back from the final publish step, update the existing draft
+          // instead of creating duplicates.
+          const existingDraft = draft?.id ? taskRepo.getById(draft.id) : null
+          return existingDraft && existingDraft.status === 'draft'
+            ? (taskRepo.update(existingDraft.id, (prev) => ({
+                ...prev,
+                ...nextData,
+                createdByUserId: auth.user!.id,
+                status: 'draft',
+              })) ?? existingDraft)
+            : taskRepo.create({ ...nextData, createdByUserId: auth.user!.id, status: 'draft' as const } as any)
+        })()
 
     navigate(taskDetailsPath(task.id), {
       state: stateBackTo ? { backTo: stateBackTo } : { fromCreateDraft: true },
@@ -401,7 +405,7 @@ export function CreateTaskPage() {
   }
 
   // Hide publishing UI until user signs in.
-  if (!auth.user) {
+  if (auth.status !== 'authenticated' || !auth.user) {
     return (
       <div className="createTaskPage">
         <div className="createTaskCard">

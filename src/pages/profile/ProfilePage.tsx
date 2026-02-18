@@ -41,6 +41,10 @@ import { useDisputes } from '@/entities/dispute/lib/useDisputes'
 import { disputeRepo } from '@/entities/dispute/lib/disputeRepo'
 import { disputeThreadPath } from '@/app/router/paths'
 import { HelpTip } from '@/shared/ui/help-tip/HelpTip'
+import { notifyToTelegramAndUi } from '@/shared/notify/notify'
+import { api } from '@/shared/api/api'
+
+const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
 type ProfileTab =
   | 'my_tasks'
@@ -57,6 +61,8 @@ export function ProfilePage() {
   const { t, locale } = useI18n()
   const auth = useAuth()
   const toast = useToast()
+  const telegramUserId = auth.user?.telegramUserId ?? null
+  const toastUi = (msg: string, tone?: 'success' | 'info' | 'error') => toast.showToast({ message: msg, tone })
   const devMode = useDevMode()
   const [searchParams] = useSearchParams()
   const tasks = useTasks()
@@ -111,7 +117,7 @@ export function ProfilePage() {
 
   const handleRejectApplication = (applicationId: string) => {
     applicationRepo.reject(applicationId)
-    toast.showToast({ tone: 'info', message: t('toast.applicationRejected') })
+    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.applicationRejected'), tone: 'info' })
   }
 
   const handleAssignApplication = (applicationId: string, opts?: { bypassNoStartConfirm?: boolean }) => {
@@ -199,7 +205,7 @@ export function ProfilePage() {
       }
     }
 
-    toast.showToast({ tone: 'success', message: t('toast.executorAssigned') })
+    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.executorAssigned'), tone: 'success' })
   }
 
   const handleWithdraw = () => {
@@ -1345,8 +1351,12 @@ export function ProfilePage() {
                                   onClick={(e) => {
                                     e.preventDefault()
                                     e.stopPropagation()
-                                    taskAssignmentRepo.startWork(task.id, user.id)
-                                    toast.showToast({ tone: 'success', message: t('toast.workStarted') })
+                                    if (USE_API) {
+                                      void api.post(`/assignments/${task.id}/start`, {}).catch(() => {})
+                                    } else {
+                                      taskAssignmentRepo.startWork(task.id, user.id)
+                                    }
+                                    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.workStarted'), tone: 'success' })
                                   }}
                                   title={locale === 'ru' ? 'Начать работу' : 'Start work'}
                                 >

@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:clean": "rm -rf dist && npm run build",
+    "deploy": "npm run build:clean && rsync -av --delete dist/ ${DEPLOY_PATH:-/var/www/nativki/dist}/",
     "lint": "eslint .",
     "preview": "vite preview",
     "server": "node server/index.js"

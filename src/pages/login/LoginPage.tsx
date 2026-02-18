@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { paths } from '@/app/router/paths'
 import { useI18n } from '@/shared/i18n/I18nContext'
-import { useAuth } from '@/shared/auth/AuthContext'
+import { TelegramLoginButton } from '@/shared/auth/TelegramLoginButton'
+import { useAuth } from '@/shared/auth/AuthProvider'
+import { useDevMode } from '@/shared/dev/devMode'
 
 function registerLink(role: 'customer' | 'executor') {
   return `${paths.register}?role=${role}`
@@ -11,7 +13,7 @@ function registerLink(role: 'customer' | 'executor') {
 export function LoginPage() {
   const { t } = useI18n()
   const auth = useAuth()
-  const navigate = useNavigate()
+  const devMode = useDevMode()
   const location = useLocation()
 
   const [email, setEmail] = useState('')
@@ -36,7 +38,6 @@ export function LoginPage() {
 
     try {
       await auth.signIn(email, password, { remember: rememberMe })
-      navigate(paths.tasks)
     } catch (e) {
       if (e instanceof Error && e.message === 'email_not_verified') {
         setFormError(t('auth.emailNotVerified'))
@@ -102,6 +103,35 @@ export function LoginPage() {
           {t('auth.signInWithGoogle')}
         </button>
 
+        { (
+          <div style={{ marginTop: 16 }}>
+            <TelegramLoginButton
+              botName={import.meta.env.VITE_TELEGRAM_BOT_NAME}
+              onAuth={async (tgUser) => {
+                setFormError(null)
+                try {
+                  await auth.signInWithTelegram(tgUser)
+                } catch (e) {
+                  const msg =
+                    e instanceof Error && e.message.startsWith('telegram_login_failed:')
+                      ? (() => {
+                          const code = e.message.split(':', 2)[1] || 'unknown'
+                          if (code === 'telegram_bot_token_missing') return 'Не настроен TELEGRAM_BOT_TOKEN на бэке.'
+                          if (code === 'hash_mismatch') return 'TELEGRAM_BOT_TOKEN не совпадает с ботом виджета (hash mismatch).'
+                          if (code === 'auth_date_too_old') return 'Слишком старый токен Telegram (проверь время на сервере).'
+                          if (code === 'missing_fields') return 'Telegram не передал данные авторизации (missing_fields).'
+                          if (code === 'invalid_user') return 'Бэк вернул неверного пользователя (user_dev_arbiter). Проверь, что /api/auth/telegram/login отдаёт id вида tg_<id>.'
+                          return `Не удалось войти через Telegram: ${code}`
+                        })()
+                      : t('auth.genericError')
+                  setFormError(msg)
+                  throw e
+                }
+              }}
+            />
+          </div>
+        )}
+
         <p className="authFooterText">
           {t('auth.noAccountJoin')}{' '}
           <Link className="authLink" to={registerLink('customer')}>
@@ -113,6 +143,20 @@ export function LoginPage() {
           </Link>
           .
         </p>
+
+        <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.10)' }}>
+          <button
+            type="button"
+            className="authBtn"
+            onClick={() => devMode.setEnabled(!devMode.enabled)}
+            aria-pressed={devMode.enabled}
+          >
+            Dev mode: {devMode.enabled ? 'ON' : 'OFF'}
+          </button>
+          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.75, lineHeight: 1.45 }}>
+            When Dev mode is ON, registration does not require email verification.
+          </div>
+        </div>
       </form>
     </div>
   )

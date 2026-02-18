@@ -414,14 +414,15 @@ export function TasksPage() {
     // Limit to a few items to avoid spamming public endpoints.
     const top = tasks.slice(0, 3)
     void (async () => {
+      const userId = auth.user?.id ?? 'demo-user'
       for (const task of top) {
         await autoTranslateIfNeeded(task.id, {
           title: task.title,
           shortDescription: task.shortDescription,
-        })
+        }, userId)
       }
     })()
-  }, [tasks, locale])
+  }, [tasks, locale, auth.user?.id])
 
   const highlightText = (value: string) => {
     if (tokens.length === 0) return { __html: value }

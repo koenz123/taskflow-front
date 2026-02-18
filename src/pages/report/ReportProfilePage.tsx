@@ -60,8 +60,6 @@ export function ReportProfilePage() {
 
   const submit = () => {
     if (!owner || !auth.user || !selectedCategory || !primaryReason) return
-    const payload = { ownerId: owner.id, categoryId: selectedCategory.id, reasonId: primaryReason, detail: customDetail.trim() }
-    console.log('report submitted', payload)
     alert(t('profile.reportSent', { personalId: owner.personalId }))
     navigate(userProfilePath(owner.id))
   }

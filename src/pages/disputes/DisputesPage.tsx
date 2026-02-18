@@ -50,20 +50,7 @@ export function DisputesPage() {
     return base.filter((d) => d.status === filter)
   }, [disputes, filter])
 
-  if (!auth.user) {
-    return (
-      <main className="disputesPage">
-        <div className="disputesContainer">
-          <h1 className="disputesTitle">{locale === 'ru' ? 'Споры' : 'Disputes'}</h1>
-          <p className="disputesHint">
-            <Link to={paths.login}>{locale === 'ru' ? 'Войти' : 'Sign in'}</Link>
-          </p>
-        </div>
-      </main>
-    )
-  }
-
-  const allowed = auth.user.role === 'arbiter'
+  const allowed = auth.user!.role === 'arbiter'
 
   if (!allowed) {
     return (

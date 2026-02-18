@@ -50,6 +50,7 @@ function capitalizeFirst(s: string) {
 export function CustomerTasksPage() {
   const { t, locale } = useI18n()
   const auth = useAuth()
+  const user = auth.user!
   const devMode = useDevMode()
   const navigate = useNavigate()
   const tasks = useTasks()
@@ -69,9 +70,8 @@ export function CustomerTasksPage() {
   const prevTasksPageRef = useRef<number | null>(null)
 
   const posted = useMemo(() => {
-    if (!auth.user) return []
-    return tasks.filter((task) => task.createdByUserId === auth.user?.id)
-  }, [auth.user, tasks])
+    return tasks.filter((task) => task.createdByUserId === user.id)
+  }, [tasks, user.id])
   const hasAnyPublished = useMemo(() => posted.some((t) => t.status !== 'draft'), [posted])
 
   const tokens = useMemo(
@@ -185,15 +185,13 @@ export function CustomerTasksPage() {
   }, [tasksPage])
 
   const reviewCount = useMemo(() => {
-    if (!auth.user) return 0
-    return contracts.filter((c) => c.clientId === auth.user!.id && c.status === 'submitted').length
-  }, [auth.user, contracts])
+    return contracts.filter((c) => c.clientId === user.id && c.status === 'submitted').length
+  }, [contracts, user.id])
 
   const pauseRequestsCount = useMemo(() => {
-    if (!auth.user || auth.user.role !== 'customer') return 0
     const myTaskIds = new Set(posted.map((t) => t.id))
     return assignments.filter((a) => a.status === 'pause_requested' && myTaskIds.has(a.taskId)).length
-  }, [assignments, auth.user, posted])
+  }, [assignments, posted])
 
 
 
@@ -453,12 +451,11 @@ export function CustomerTasksPage() {
               {pauseRequestsCount ? ` (${pauseRequestsCount})` : ''}
             </Link>
 
-            {devMode.enabled && auth.user?.role === 'customer' ? (
+            {devMode.enabled && user.role === 'customer' ? (
               <button
                 type="button"
                 className="customerTasksArchiveBtn"
                 onClick={() => {
-                  if (!auth.user) return
                   const demo = taskRepo.create({
                     title: { ru: 'Тестовое задание (dev)', en: 'Demo task (dev)' },
                     shortDescription: {
@@ -473,7 +470,7 @@ export function CustomerTasksPage() {
                       ru: 'Это тестовое задание. Быстро проверяйте таймеры/паузы/споры.',
                       en: 'This is a demo task to quickly test timers/pauses/disputes.',
                     },
-                    createdByUserId: auth.user.id,
+                    createdByUserId: user.id,
                     category: 'Dev',
                     location: 'Auto',
                     budgetAmount: 0,

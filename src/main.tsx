@@ -7,6 +7,8 @@ import { I18nProvider } from '@/shared/i18n/I18nProvider'
 import { AuthProvider } from '@/shared/auth/AuthProvider'
 import { ToastProvider } from '@/shared/ui/toast/ToastProvider'
 import { initTheme } from '@/shared/theme/theme'
+import { initGlobalErrorHandlers } from '@/shared/logging/initGlobalErrorHandlers'
+import { ErrorBoundary } from '@/shared/logging/ErrorBoundary'
 
 if (import.meta.env.DEV) {
   void import('@/shared/dev/exposeDevTools')
@@ -15,13 +17,17 @@ if (import.meta.env.DEV) {
 // Apply theme before first render to avoid flicker.
 initTheme('dark')
 
+initGlobalErrorHandlers()
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <I18nProvider>
       <AuthProvider>
         <ToastProvider>
           <BrowserRouter>
-            <App />
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>
           </BrowserRouter>
         </ToastProvider>
       </AuthProvider>

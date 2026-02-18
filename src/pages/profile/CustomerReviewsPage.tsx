@@ -27,6 +27,7 @@ import { StatusPill } from '@/shared/ui/status-pill/StatusPill'
 export function CustomerReviewsPage() {
   const { t, locale } = useI18n()
   const auth = useAuth()
+  const user = auth.user!
   const devMode = useDevMode()
   const navigate = useNavigate()
   const tasks = useTasks()
@@ -38,7 +39,7 @@ export function CustomerReviewsPage() {
   const [revisionModalContractId, setRevisionModalContractId] = useState<string | null>(null)
   const [blockedModal, setBlockedModal] = useState<null | { title: string; message: string }>(null)
 
-  const customerId = auth.user?.role === 'customer' ? auth.user.id : null
+  const customerId = user.role === 'customer' ? user.id : null
 
   const reviewContracts = useMemo(() => {
     if (!customerId) return []
@@ -54,20 +55,7 @@ export function CustomerReviewsPage() {
       .sort((a, b) => bySubmissionTime(b).localeCompare(bySubmissionTime(a)))
   }, [contracts, customerId, submissions])
 
-  if (!auth.user) {
-    return (
-      <main className="customerTasksPage">
-        <div className="customerTasksContainer">
-          <h1 className="customerTasksTitle">{t('customerReview.title')}</h1>
-          <p>
-            <Link to={paths.login}>{t('auth.signIn')}</Link>
-          </p>
-        </div>
-      </main>
-    )
-  }
-
-  if (auth.user.role !== 'customer') {
+  if (user.role !== 'customer') {
     return (
       <main className="customerTasksPage">
         <div className="customerTasksContainer">
@@ -193,16 +181,15 @@ export function CustomerReviewsPage() {
     }
     const used = contract.revisionUsed ?? 0
     if (used < 2) return
-    if (!auth.user) return
 
     const dispute = disputeRepo.open({
       contractId: contract.id,
-      openedByUserId: auth.user.id,
+      openedByUserId: user.id,
       reason: { categoryId: 'universal', reasonId: 'other' },
     })
     notificationRepo.addDisputeOpened({
       recipientUserId: contract.executorId,
-      actorUserId: auth.user.id,
+      actorUserId: user.id,
       taskId: contract.taskId,
       disputeId: dispute.id,
     })

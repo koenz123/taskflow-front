@@ -122,6 +122,10 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase()
 }
 
+function isUserRole(value: unknown): value is UserRole {
+  return value === 'customer' || value === 'executor' || value === 'arbiter' || value === 'pending'
+}
+
 export const userRepo = {
   list(): User[] {
     return readAll().slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -266,6 +270,62 @@ export const userRepo = {
 
     const now = new Date().toISOString()
     const next: User = { ...users[idx], emailVerified: true, updatedAt: now }
+    users[idx] = next
+    writeAll(users)
+    return next
+  },
+
+  upsertFromServer(serverUser: Partial<User> & { id: string }): User {
+    const users = readAll()
+    const idx = users.findIndex((u) => u.id === serverUser.id)
+    const now = new Date().toISOString()
+
+    const prev = idx === -1 ? null : users[idx]
+    const email = typeof serverUser.email === 'string' ? normalizeEmail(serverUser.email) : prev?.email ?? ''
+    const allowArbiterRole = serverUser.id === DEV_ARBITER_USER_ID
+    const incomingRole = isUserRole(serverUser.role) ? serverUser.role : null
+    const safeRole: UserRole | null = incomingRole === 'arbiter' && !allowArbiterRole ? null : incomingRole
+
+    const next: User = {
+      id: serverUser.id,
+      role: (safeRole ?? prev?.role) ?? 'pending',
+      fullName: (typeof serverUser.fullName === 'string' ? serverUser.fullName : prev?.fullName ?? '').trim(),
+      phone: (typeof serverUser.phone === 'string' ? serverUser.phone : prev?.phone ?? '').trim(),
+      email,
+      emailVerified: typeof serverUser.emailVerified === 'boolean' ? serverUser.emailVerified : (prev?.emailVerified ?? true),
+      telegramUserId:
+        typeof (serverUser as any).telegramUserId === 'string' || typeof (serverUser as any).telegramUserId === 'number'
+          ? String((serverUser as any).telegramUserId)
+          : (prev?.telegramUserId ?? null),
+      company:
+        typeof serverUser.company === 'string'
+          ? (serverUser.company.trim() || undefined)
+          : prev?.company,
+      socials: typeof serverUser.socials === 'object' ? (serverUser.socials as any) : prev?.socials,
+      avatarDataUrl: typeof serverUser.avatarDataUrl === 'string' ? serverUser.avatarDataUrl : prev?.avatarDataUrl,
+      personalId: prev?.personalId ?? createPersonalId(),
+      passwordHash: typeof (serverUser as any).passwordHash === 'string' ? String((serverUser as any).passwordHash) : (prev?.passwordHash ?? ''),
+      createdAt: prev?.createdAt ?? now,
+      updatedAt: now,
+    }
+
+    if (idx === -1) {
+      users.push(next)
+    } else {
+      users[idx] = next
+    }
+    writeAll(users)
+    return next
+  },
+
+  setRole(userId: string, role: Exclude<UserRole, 'arbiter'>): User {
+    if (role !== 'customer' && role !== 'executor' && role !== 'pending') throw new Error('invalid_role')
+    const users = readAll()
+    const idx = users.findIndex((u) => u.id === userId)
+    if (idx === -1) throw new Error('user_not_found')
+    const now = new Date().toISOString()
+    const prev = users[idx]
+    const next: User = { ...prev, role, updatedAt: now }
     users[idx] = next
     writeAll(users)
     return next

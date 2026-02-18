@@ -1,4 +1,4 @@
-export type UserRole = 'customer' | 'executor' | 'arbiter'
+export type UserRole = 'customer' | 'executor' | 'arbiter' | 'pending'
 
 export type SocialPlatform =
   | 'instagram'
@@ -24,6 +24,7 @@ export type User = {
   phone: string
   email: string
   emailVerified?: boolean
+  telegramUserId?: string | null
   company?: string
   socials?: Partial<Record<SocialPlatform, string>>
   avatarDataUrl?: string

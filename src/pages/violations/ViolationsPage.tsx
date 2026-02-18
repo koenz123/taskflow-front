@@ -31,7 +31,8 @@ export function ViolationsPage() {
   const { t, locale } = useI18n()
   const navigate = useNavigate()
   const tasks = useTasks()
-  const violations = useExecutorViolations(auth.user?.role === 'executor' ? auth.user.id : null)
+  const user = auth.user!
+  const violations = useExecutorViolations(user.role === 'executor' ? user.id : null)
   const [helpOpen, setHelpOpen] = useState(false)
 
   const taskById = useMemo(() => {
@@ -88,20 +89,7 @@ export function ViolationsPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [helpOpen])
 
-  if (!auth.user) {
-    return (
-      <main className="violationsPage">
-        <div className="violationsContainer">
-          <h1 className="violationsTitle">{t('violations.title')}</h1>
-          <p style={{ opacity: 0.85 }}>
-            <Link to={paths.login}>{t('auth.signIn')}</Link>
-          </p>
-        </div>
-      </main>
-    )
-  }
-
-  if (auth.user.role !== 'executor') {
+  if (user.role !== 'executor') {
     return (
       <main className="violationsPage">
         <div className="violationsContainer">

@@ -108,6 +108,7 @@ export function DisputeWorkspacePage() {
   const auth = useAuth()
   const { locale } = useI18n()
   const navigate = useNavigate()
+  const user = auth.user!
   const chatListRef = useRef<HTMLDivElement | null>(null)
   const didInitialChatScrollRef = useRef(false)
 
@@ -133,8 +134,8 @@ export function DisputeWorkspacePage() {
     return { customerId: contract.clientId, executorId: contract.executorId, arbiterId: DEV_ARBITER_USER_ID }
   }, [contract])
 
-  const isArbiter = Boolean(auth.user?.role === 'arbiter' && auth.user.id === participants.arbiterId)
-  const allowed = Boolean(auth.user && dispute && contract && isArbiter)
+  const isArbiter = Boolean(user.role === 'arbiter' && user.id === participants.arbiterId)
+  const allowed = Boolean(dispute && contract && isArbiter)
 
   const customer = participants.customerId ? users.find((u) => u.id === participants.customerId) ?? null : null
   const executor = participants.executorId ? users.find((u) => u.id === participants.executorId) ?? null : null
@@ -168,9 +169,9 @@ export function DisputeWorkspacePage() {
   }, [])
 
   useEffect(() => {
-    if (!auth.user || !dispute) return
-    notificationRepo.markReadForDispute(auth.user.id, dispute.id)
-  }, [auth.user, dispute])
+    if (!dispute) return
+    notificationRepo.markReadForDispute(user.id, dispute.id)
+  }, [dispute, user.id])
 
   // Decision draft (autosave later; for now local state)
   const [decisionKind, setDecisionKind] = useState<DecisionKind>('release_to_executor')
@@ -184,19 +185,6 @@ export function DisputeWorkspacePage() {
   const [confirmVersion, setConfirmVersion] = useState<number | null>(null)
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [arbiterDraft, setArbiterDraft] = useState('')
-
-  if (!auth.user) {
-    return (
-      <main className="disputeWsPage">
-        <div className="disputeWsContainer">
-          <h1 className="disputeWsTitle">{locale === 'ru' ? 'Спор' : 'Dispute'}</h1>
-          <p style={{ opacity: 0.85 }}>
-            <Link to={paths.login}>{locale === 'ru' ? 'Войти' : 'Sign in'}</Link>
-          </p>
-        </div>
-      </main>
-    )
-  }
 
   if (!dispute || !contract) {
     return (

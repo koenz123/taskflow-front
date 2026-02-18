@@ -8,14 +8,17 @@ import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import { useUsers } from '@/entities/user/lib/useUsers'
 import { useTasks } from '@/entities/task/lib/useTasks'
 import { buildNotificationVM } from '@/entities/notification/lib/notificationViewModel'
+import { api } from '@/shared/api/api'
 import './notifications.css'
 
 type Filter = 'all' | 'unread'
+const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
 export function NotificationsPage() {
   const auth = useAuth()
   const { t, locale } = useI18n()
-  const notifications = useNotifications(auth.user?.id)
+  const userId = auth.user!.id
+  const notifications = useNotifications(userId)
   const users = useUsers()
   const tasks = useTasks()
   const [filter, setFilter] = useState<Filter>('all')
@@ -39,19 +42,6 @@ export function NotificationsPage() {
 
   const unreadCount = useMemo(() => notifications.filter((n) => !n.readAt).length, [notifications])
 
-  if (!auth.user) {
-    return (
-      <main className="notificationsPage">
-        <div className="notificationsContainer">
-          <h1 className="notificationsTitle">{t('notifications.title')}</h1>
-          <p style={{ opacity: 0.85 }}>
-            <Link to={paths.login}>{t('auth.signIn')}</Link>
-          </p>
-        </div>
-      </main>
-    )
-  }
-
   return (
     <main className="notificationsPage">
       <div className="notificationsContainer">
@@ -67,7 +57,10 @@ export function NotificationsPage() {
               type="button"
               className="notificationsBtn"
               disabled={!unreadCount}
-              onClick={() => notificationRepo.markAllRead(auth.user!.id)}
+              onClick={() => {
+                if (USE_API) void api.post('/notifications/read-all', {}).catch(() => {})
+                else notificationRepo.markAllRead(userId)
+              }}
             >
               {t('notifications.markAllRead')}
             </button>
@@ -111,7 +104,10 @@ export function NotificationsPage() {
                   <Link
                     to={vm.href ?? paths.profile}
                     className="notificationsItemMain"
-                    onClick={() => notificationRepo.markRead(n.id)}
+                    onClick={() => {
+                      if (USE_API) void api.post(`/notifications/${n.id}/read`, {}).catch(() => {})
+                      else notificationRepo.markRead(n.id)
+                    }}
                   >
                     <span className="notificationsItemIcon" aria-hidden="true">
                       {vm.icon}

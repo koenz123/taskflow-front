@@ -11,16 +11,20 @@ import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import './profile.css'
 import { StatusPill } from '@/shared/ui/status-pill/StatusPill'
 import { useToast } from '@/shared/ui/toast/ToastProvider'
+import { notifyToTelegramAndUi } from '@/shared/notify/notify'
 
 export function CustomerRequestsPage() {
   const { t, locale } = useI18n()
   const auth = useAuth()
   const toast = useToast()
+  const user = auth.user!
+  const telegramUserId = user.telegramUserId ?? null
+  const toastUi = (msg: string, tone?: 'success' | 'info' | 'error') => toast.showToast({ message: msg, tone })
   const tasks = useTasks()
   const users = useUsers()
   const assignments = useTaskAssignments()
 
-  const customerId = auth.user?.role === 'customer' ? auth.user.id : null
+  const customerId = user.role === 'customer' ? user.id : null
 
   const pauseRequests = useMemo(() => {
     if (!customerId) return []
@@ -31,20 +35,7 @@ export function CustomerRequestsPage() {
       .sort((a, b) => (b.pauseRequestedAt ?? b.assignedAt).localeCompare(a.pauseRequestedAt ?? a.assignedAt))
   }, [assignments, customerId, tasks])
 
-  if (!auth.user) {
-    return (
-      <main className="customerTasksPage">
-        <div className="customerTasksContainer">
-          <h1 className="customerTasksTitle">{t('customerRequests.title')}</h1>
-          <p>
-            <Link to={paths.login}>{t('auth.signIn')}</Link>
-          </p>
-        </div>
-      </main>
-    )
-  }
-
-  if (auth.user.role !== 'customer') {
+  if (user.role !== 'customer') {
     return (
       <main className="customerTasksPage">
         <div className="customerTasksContainer">
@@ -135,10 +126,10 @@ export function CustomerRequestsPage() {
                           taskAssignmentRepo.acceptPause(req.taskId, req.executorId)
                           notificationRepo.addTaskPauseAccepted({
                             recipientUserId: req.executorId,
-                            actorUserId: auth.user!.id,
+                            actorUserId: user.id,
                             taskId: req.taskId,
                           })
-                          toast.showToast({ tone: 'success', message: t('toast.pauseAccepted') })
+                          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseAccepted'), tone: 'success' })
                         }}
                       >
                         {t('customerRequests.accept')}
@@ -151,10 +142,10 @@ export function CustomerRequestsPage() {
                           taskAssignmentRepo.rejectPause(req.taskId, req.executorId)
                           notificationRepo.addTaskPauseRejected({
                             recipientUserId: req.executorId,
-                            actorUserId: auth.user!.id,
+                            actorUserId: user.id,
                             taskId: req.taskId,
                           })
-                          toast.showToast({ tone: 'info', message: t('toast.pauseRejected') })
+                          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseRejected'), tone: 'info' })
                         }}
                       >
                         {t('customerRequests.reject')}

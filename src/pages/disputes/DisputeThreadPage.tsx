@@ -38,6 +38,7 @@ function statusLabel(status: string, locale: 'ru' | 'en') {
 export function DisputeThreadPage() {
   const { disputeId } = useParams()
   const auth = useAuth()
+  const user = auth.user!
   const { locale } = useI18n()
   const navigate = useNavigate()
   // subscribe so page updates if dispute/messages change
@@ -56,24 +57,23 @@ export function DisputeThreadPage() {
   }, [contract])
 
   const allowed = useMemo(() => {
-    if (!auth.user || !dispute || !contract) return false
-    if (auth.user.id === participants.customerId) return true
-    if (auth.user.id === participants.executorId) return true
-    if (auth.user.role === 'arbiter' && auth.user.id === participants.arbiterId) return true
+    if (!dispute || !contract) return false
+    if (user.id === participants.customerId) return true
+    if (user.id === participants.executorId) return true
+    if (user.role === 'arbiter' && user.id === participants.arbiterId) return true
     return false
-  }, [auth.user, contract, dispute, participants.arbiterId, participants.customerId, participants.executorId])
+  }, [contract, dispute, participants.arbiterId, participants.customerId, participants.executorId, user.id, user.role])
 
   // Arbiter gets full workspace instead of party chat.
-  if (auth.user?.role === 'arbiter' && auth.user.id === participants.arbiterId) {
+  if (user.role === 'arbiter' && user.id === participants.arbiterId) {
     return <DisputeWorkspacePage />
   }
 
   const messages = useDisputeMessages(dispute?.id ?? null)
   const visibleMessages = useMemo(() => {
-    if (!auth.user) return []
-    const isArbiter = auth.user.role === 'arbiter' && auth.user.id === participants.arbiterId
+    const isArbiter = user.role === 'arbiter' && user.id === participants.arbiterId
     return isArbiter ? messages : messages.filter((m) => m.kind !== 'internal')
-  }, [auth.user, messages, participants.arbiterId])
+  }, [messages, participants.arbiterId, user.id, user.role])
   const [text, setText] = useState('')
   const [internal, setInternal] = useState(false)
   const listRef = useRef<HTMLDivElement | null>(null)
@@ -85,28 +85,15 @@ export function DisputeThreadPage() {
   const arbiter = users.find((u) => u.id === participants.arbiterId) ?? null
 
   useEffect(() => {
-    if (!auth.user || !dispute) return
-    notificationRepo.markReadForDispute(auth.user.id, dispute.id)
-  }, [auth.user, dispute])
+    if (!dispute) return
+    notificationRepo.markReadForDispute(user.id, dispute.id)
+  }, [dispute, user.id])
 
   useEffect(() => {
     // scroll to bottom on new messages
     if (!listRef.current) return
     listRef.current.scrollTop = listRef.current.scrollHeight
   }, [visibleMessages.length])
-
-  if (!auth.user) {
-    return (
-      <main className="disputeThreadPage">
-        <div className="disputeThreadContainer">
-          <h1 className="disputeThreadTitle">{locale === 'ru' ? 'Спор' : 'Dispute'}</h1>
-          <p style={{ opacity: 0.85 }}>
-            <Link to={paths.login}>{locale === 'ru' ? 'Войти' : 'Sign in'}</Link>
-          </p>
-        </div>
-      </main>
-    )
-  }
 
   if (!dispute || !contract) {
     return (
@@ -215,7 +202,7 @@ export function DisputeThreadPage() {
             )}
           </div>
 
-          {auth.user.role === 'arbiter' && auth.user.id === participants.arbiterId ? (
+          {user.role === 'arbiter' && user.id === participants.arbiterId ? (
             <div style={{ padding: '0 12px 10px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button
                 type="button"
@@ -227,7 +214,7 @@ export function DisputeThreadPage() {
                   auditLogRepo.add({
                     disputeId: dispute.id,
                     actionType: 'system_message',
-                    actorUserId: auth.user!.id,
+                    actorUserId: user.id,
                     summary: locale === 'ru' ? 'Запрос: таймкод несоответствия' : 'Request: mismatch timestamp',
                     payload: { messageId: msg.id },
                   })
@@ -245,7 +232,7 @@ export function DisputeThreadPage() {
                   auditLogRepo.add({
                     disputeId: dispute.id,
                     actionType: 'system_message',
-                    actorUserId: auth.user!.id,
+                    actorUserId: user.id,
                     summary: locale === 'ru' ? 'Запрос: исходники' : 'Request: source files',
                     payload: { messageId: msg.id },
                   })
@@ -322,7 +309,7 @@ export function DisputeThreadPage() {
               })
             }}
           >
-            {auth.user.role === 'arbiter' && auth.user.id === participants.arbiterId ? (
+            {user.role === 'arbiter' && user.id === participants.arbiterId ? (
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, opacity: 0.9 }}>
                 <input
                   type="checkbox"

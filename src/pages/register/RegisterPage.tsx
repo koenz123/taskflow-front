@@ -4,6 +4,7 @@ import { paths } from '@/app/router/paths'
 import { useI18n } from '@/shared/i18n/I18nContext'
 import type { TranslationKey } from '@/shared/i18n/translations'
 import { useAuth } from '@/shared/auth/AuthContext'
+import { useDevMode } from '@/shared/dev/devMode'
 
 type Role = 'customer' | 'executor'
 
@@ -56,6 +57,7 @@ function validate(form: FormState, t: (key: TranslationKey) => string): FormErro
 export function RegisterPage() {
   const { t } = useI18n()
   const auth = useAuth()
+  const devMode = useDevMode()
   const navigate = useNavigate()
   const location = useLocation()
   const roleFromQuery = (() => {
@@ -109,7 +111,11 @@ export function RegisterPage() {
         company: form.role === 'customer' ? form.company : undefined,
         password: form.password,
       })
-      navigate(`${paths.verifyEmailSent}?email=${encodeURIComponent(form.email.trim())}`)
+      if (devMode.enabled) {
+        navigate(paths.tasks, { replace: true })
+      } else {
+        navigate(`${paths.verifyEmailSent}?email=${encodeURIComponent(form.email.trim())}`)
+      }
     } catch (e) {
       if (e instanceof Error && e.message === 'email_taken') {
         setEmailTakenKind('taken')

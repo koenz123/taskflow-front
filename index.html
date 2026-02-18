@@ -8,6 +8,11 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      window.onTelegramAuth = function (user) {
+        window.dispatchEvent(new CustomEvent('tg-auth', { detail: user }))
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

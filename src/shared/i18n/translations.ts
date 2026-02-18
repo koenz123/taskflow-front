@@ -238,7 +238,7 @@ export const translations = {
     'nav.home': 'Home',
     'nav.archive': 'Archive',
     'auth.signUp': 'Sign up',
-    'auth.signIn': 'Sign in',
+    'auth.signIn': 'Sign in LOOOL',
     'auth.signOut': 'Sign out',
     'auth.authorization': 'Log in',
     'auth.profile': 'Profile',
@@ -294,7 +294,7 @@ export const translations = {
     'common.optional': '(optional)',
     'register.submit': 'Create account',
     'register.haveAccount': 'Already have an account?',
-    'register.signInLink': 'Sign in',
+    'register.signInLink': 'Sign in LOOL',
     'register.alertPlaceholder': 'Sign up: placeholder. Data has been logged to the console.',
 
     'verifyEmail.sent.title': 'Verify your email',
@@ -305,7 +305,7 @@ export const translations = {
     'verifyEmail.verify.subtitle': 'We are verifying your email address.',
     'verifyEmail.verify.loading': 'Verifying…',
 
-    'login.title': 'Sign in',
+    'login.title': 'Sign in LOOL',
     'login.placeholder': 'Sign-in page placeholder.',
     'common.backHome': 'Back to home',
 

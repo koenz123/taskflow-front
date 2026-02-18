@@ -1,12 +1,55 @@
 import { useSyncExternalStore } from 'react'
 import type { Task } from '../model/task'
 import { taskRepo } from './taskRepo'
+import { api } from '@/shared/api/api'
+import { sessionRepo } from '@/shared/auth/sessionRepo'
 
 const EVENT_NAME = 'ui-create-works.tasks.change'
 
 let cachedSnapshot: Task[] | null = null
+const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
+
+let apiSnapshot: Task[] = []
+let apiStore: { subs: Set<() => void> } = { subs: new Set() }
+let apiRefreshing = false
+let apiHasLoaded = false
+let apiLoadedForToken: string | null = null
+
+export async function fetchTasks() {
+  if (!USE_API) return
+  const token = sessionRepo.getToken()
+  if (apiLoadedForToken !== token) {
+    apiLoadedForToken = token
+    apiHasLoaded = false
+  }
+  if (apiHasLoaded) return
+  if (apiRefreshing) return
+  apiRefreshing = true
+  if (!token) {
+    apiSnapshot = []
+    apiHasLoaded = true
+    apiRefreshing = false
+    for (const cb of apiStore.subs) cb()
+    return
+  }
+  try {
+    apiSnapshot = await api.get<Task[]>('/tasks')
+    apiHasLoaded = true
+  } catch {
+    // keep previous snapshot on transient errors
+  }
+  apiRefreshing = false
+  for (const cb of apiStore.subs) cb()
+}
 
 function subscribe(callback: () => void) {
+  if (USE_API) {
+    apiStore.subs.add(callback)
+    return () => {
+      apiStore.subs.delete(callback)
+    }
+  }
+
   const handler = () => {
     cachedSnapshot = taskRepo.list()
     callback()
@@ -27,6 +70,7 @@ function subscribe(callback: () => void) {
 }
 
 function getSnapshot(): Task[] {
+  if (USE_API) return apiSnapshot
   if (!cachedSnapshot) cachedSnapshot = taskRepo.list()
   return cachedSnapshot
 }
