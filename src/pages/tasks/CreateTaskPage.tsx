@@ -419,24 +419,6 @@ export function CreateTaskPage() {
         return
       }
 
-      // "Publish" in create flow should actually publish the task. If publish fails,
-      // keep the created draft and send user to task details (where publish can be retried).
-      try {
-        await api.post(`/tasks/${created.id}/publish`, {})
-      } catch (e) {
-        if (e instanceof ApiError && e.status === 401) {
-          alert(locale === 'ru' ? 'Сессия истекла. Войдите снова.' : 'Session expired. Please sign in again.')
-          navigate(paths.login)
-          return
-        }
-        // task is created; avoid duplicates by continuing to details page
-        alert(
-          locale === 'ru'
-            ? 'Задание создано, но не удалось опубликовать. Открою страницу задания — попробуйте опубликовать ещё раз.'
-            : 'Task was created, but publish failed. Opening task page so you can retry.',
-        )
-      }
-
       task = created
       await refreshTasks()
     } else {
@@ -449,9 +431,9 @@ export function CreateTaskPage() {
               ...prev,
               ...nextData,
               createdByUserId: auth.user!.id,
-              status: 'open',
+              status: 'draft',
             })) ?? existingDraft)
-          : taskRepo.create({ ...nextData, createdByUserId: auth.user!.id, status: 'open' as const } as any)
+          : taskRepo.create({ ...nextData, createdByUserId: auth.user!.id, status: 'draft' as const } as any)
     }
 
     navigate(taskDetailsPath(task.id), {

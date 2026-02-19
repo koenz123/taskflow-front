@@ -30,6 +30,7 @@ import { DisputesInboxPage } from '@/pages/disputes/DisputesInboxPage'
 import { DisputeThreadPage } from '@/pages/disputes/DisputeThreadPage'
 import { ChooseRolePage } from '@/pages/choose-role/ChooseRolePage'
 import { ProtectedRoute } from '@/shared/auth/ProtectedRoute'
+import { RequireTasksLoaded } from '@/shared/tasks/RequireTasksLoaded'
 
 export function AppRouter() {
   const auth = useAuth()
@@ -164,7 +165,9 @@ export function AppRouter() {
           path={paths.taskDetails}
           element={
             <ProtectedRoute>
-              <TaskDetailsPage />
+              <RequireTasksLoaded>
+                <TaskDetailsPage />
+              </RequireTasksLoaded>
             </ProtectedRoute>
           }
         />
@@ -172,7 +175,9 @@ export function AppRouter() {
           path={paths.taskEdit}
           element={
             <ProtectedRoute>
-              <EditTaskPage />
+              <RequireTasksLoaded>
+                <EditTaskPage />
+              </RequireTasksLoaded>
             </ProtectedRoute>
           }
         />

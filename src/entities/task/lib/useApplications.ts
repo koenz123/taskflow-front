@@ -20,6 +20,10 @@ let apiRefreshing = false
 let apiHasLoaded = false
 let apiLoadedForToken: string | null = null
 
+function notifyApi() {
+  for (const cb of apiStore.subs) cb()
+}
+
 function sameList(a: TaskApplication[], b: TaskApplication[]) {
   if (a === b) return true
   if (a.length !== b.length) return false
@@ -44,7 +48,7 @@ export async function fetchApplications() {
   if (!token) {
     apiSnapshot = []
     apiHasLoaded = true
-    for (const cb of apiStore.subs) cb()
+    notifyApi()
     apiRefreshing = false
     return
   }
@@ -56,13 +60,53 @@ export async function fetchApplications() {
     // keep previous
   }
   apiRefreshing = false
-  for (const cb of apiStore.subs) cb()
+  notifyApi()
+}
+
+export async function refreshApplications() {
+  if (!USE_API) return
+  apiHasLoaded = false
+  await fetchApplications()
+}
+
+export async function fetchApplicationsForTask(taskId: string) {
+  if (!USE_API) return []
+  const token = sessionRepo.getToken()
+  if (!token) return []
+  const next = await api.get<TaskApplication[]>(`/applications?taskId=${encodeURIComponent(taskId)}`)
+  // Merge: replace apps for this task with server list, keep other tasks intact.
+  const keep = apiSnapshot.filter((a) => a.taskId !== taskId)
+  apiSnapshot = keep.concat(next)
+  apiHasLoaded = true
+  notifyApi()
+  return next
+}
+
+export function upsertApplication(app: TaskApplication) {
+  if (!USE_API) return
+  const idx = apiSnapshot.findIndex((x) => x.id === app.id)
+  if (idx === -1) apiSnapshot = apiSnapshot.concat([app])
+  else {
+    const copy = apiSnapshot.slice()
+    copy[idx] = app
+    apiSnapshot = copy
+  }
+  apiHasLoaded = true
+  notifyApi()
 }
 
 function subscribeApi(cb: () => void) {
   apiStore.subs.add(cb)
+  void fetchApplications()
+  const onSession = () => {
+    void refreshApplications()
+  }
+  window.addEventListener('ui-create-works.session.change', onSession)
+  window.addEventListener('storage', onSession)
   return () => {
     apiStore.subs.delete(cb)
+    window.removeEventListener('ui-create-works.session.change', onSession)
+    window.removeEventListener('storage', onSession)
   }
 }
 

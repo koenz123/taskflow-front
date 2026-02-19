@@ -2,16 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { paths, taskDetailsPath, userProfilePath } from '@/app/router/paths'
 import { applicationRepo } from '@/entities/task/lib/applicationRepo'
-import { useApplications } from '@/entities/task/lib/useApplications'
+import { fetchApplicationsForTask, useApplications } from '@/entities/task/lib/useApplications'
 import { taskRepo, archiveExpiredTasks, archiveStaleTasks } from '@/entities/task/lib/taskRepo'
-import { useTasks } from '@/entities/task/lib/useTasks'
-import { useUsers } from '@/entities/user/lib/useUsers'
+import { refreshTasks, useTasks } from '@/entities/task/lib/useTasks'
+import { fetchUsersByIds, useUsers } from '@/entities/user/lib/useUsers'
 import { balanceRepo } from '@/entities/user/lib/balanceRepo'
 import { balanceFreezeRepo } from '@/entities/user/lib/balanceFreezeRepo'
 import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import { pickText } from '@/entities/task/lib/taskText'
 import { OPEN_APPLICATIONS_EVENT } from '@/entities/task/lib/applicationEvents'
-import { useContracts } from '@/entities/contract/lib/useContracts'
+import { refreshContracts, useContracts } from '@/entities/contract/lib/useContracts'
 import { contractRepo } from '@/entities/contract/lib/contractRepo'
 import { useAuth } from '@/shared/auth/AuthContext'
 import { useI18n } from '@/shared/i18n/I18nContext'
@@ -21,12 +21,16 @@ import { CustomSelect } from '@/shared/ui/custom-select/CustomSelect'
 import { taskAssignmentRepo } from '@/entities/taskAssignment/lib/taskAssignmentRepo'
 import { noStartViolationCountLast90d } from '@/entities/executorSanction/lib/noStartSanctions'
 import { NoStartAssignModal } from '@/features/sanctions/NoStartAssignModal'
-import { useTaskAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
+import { refreshAssignments, useTaskAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
+import { refreshNotifications } from '@/entities/notification/lib/useNotifications'
+import { ApiError, api } from '@/shared/api/api'
 import { useDevMode } from '@/shared/dev/devMode'
 import './profile.css'
 import { previewMetaList } from '@/shared/lib/metaList'
 import { StatusPill } from '@/shared/ui/status-pill/StatusPill'
 import { Pagination } from '@/shared/ui/pagination/Pagination'
+
+const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
 type StatusFilter = 'all' | 'draft' | 'open' | 'in_progress' | 'review' | 'dispute' | 'closed' | 'waiting'
 
@@ -243,12 +247,29 @@ export function CustomerTasksPage() {
     }
   }, [searchHelpOpen])
 
-  const handleAssignApplication = (
+  const handleAssignApplication = async (
     app: typeof activeTaskApplications[number],
     opts?: { bypassNoStartConfirm?: boolean },
   ) => {
     if (!activeTask || !auth.user) return
     setInsufficientAlertTaskId(null)
+
+    if (USE_API) {
+      try {
+        await api.post(`/applications/${app.id}/select`, {})
+        await Promise.all([
+          refreshTasks(),
+          fetchApplicationsForTask(activeTask.id).catch(() => []),
+          refreshContracts(),
+          refreshAssignments(),
+          refreshNotifications(),
+        ])
+      } catch (e) {
+        // keep UI responsive; errors are already logged by api helper
+      }
+      return
+    }
+
     const customerId = activeTask.createdByUserId
     const existingContract = contractRepo.getForTaskExecutor(activeTask.id, app.executorUserId)
     const amount = activeTask.budgetAmount ?? 0
@@ -313,7 +334,26 @@ export function CustomerTasksPage() {
     }
   }
 
-  const handleRejectApplication = (applicationId: string) => {
+  const handleRejectApplication = async (applicationId: string) => {
+    if (USE_API) {
+      try {
+        try {
+          await api.post(`/applications/${applicationId}/reject`, {})
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 404) {
+            await api.patch(`/applications/${applicationId}`, { status: 'rejected' })
+          } else {
+            throw e
+          }
+        }
+        if (applicationsOverlayTaskId) await fetchApplicationsForTask(applicationsOverlayTaskId).catch(() => [])
+        await refreshNotifications()
+      } catch {
+        // ignore; api helper logs
+      }
+      return
+    }
+
     applicationRepo.reject(applicationId)
   }
 
@@ -368,6 +408,15 @@ export function CustomerTasksPage() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
+  }, [applicationsOverlayTaskId])
+
+  useEffect(() => {
+    if (!USE_API) return
+    if (!applicationsOverlayTaskId) return
+    void (async () => {
+      const apps = await fetchApplicationsForTask(applicationsOverlayTaskId).catch(() => [])
+      if (apps.length) await fetchUsersByIds(apps.map((a) => a.executorUserId))
+    })()
   }, [applicationsOverlayTaskId])
 
   useEffect(() => {
@@ -680,34 +729,25 @@ export function CustomerTasksPage() {
                       className={`profileApplicationsListItem${app.status === 'selected' ? ' profileApplicationsListItem--selected' : ''}${isOverdue ? ' profileApplicationsListItem--overdue' : ''}`}
                     >
                       <div className="profileApplicationsListItem__header">
-                        {executor ? (
-                          <Link
-                            className="profileApplicationsListItem__nameLink"
-                            to={userProfilePath(executor.id)}
-                            state={activeTask ? { backTo: taskDetailsPath(activeTask.id) } : undefined}
-                            onClick={() => setApplicationsOverlayTaskId(null)}
-                          >
-                            <span className="profileApplicationsListItem__headerLeft">
-                              <span className="profileApplicationsListItem__avatar" aria-hidden="true">
-                                {executor.avatarDataUrl ? (
-                                  <img src={executor.avatarDataUrl} alt="" />
-                                ) : (
-                                  <span className="profileApplicationsListItem__avatarFallback">
-                                    {(executor.fullName ?? executor.email ?? '?').trim().slice(0, 1).toUpperCase()}
-                                  </span>
-                                )}
-                              </span>
-                              <strong>{executor.fullName ?? executor.email ?? t('notifications.someone')}</strong>
-                            </span>
-                          </Link>
-                        ) : (
+                        <Link
+                          className="profileApplicationsListItem__nameLink"
+                          to={userProfilePath(app.executorUserId)}
+                          state={activeTask ? { backTo: taskDetailsPath(activeTask.id) } : undefined}
+                          onClick={() => setApplicationsOverlayTaskId(null)}
+                        >
                           <span className="profileApplicationsListItem__headerLeft">
                             <span className="profileApplicationsListItem__avatar" aria-hidden="true">
-                              <span className="profileApplicationsListItem__avatarFallback">?</span>
+                              {executor?.avatarDataUrl ? (
+                                <img src={executor.avatarDataUrl} alt="" />
+                              ) : (
+                                <span className="profileApplicationsListItem__avatarFallback">
+                                  {(executor?.fullName || executor?.email || '?').trim().slice(0, 1).toUpperCase()}
+                                </span>
+                              )}
                             </span>
-                            <strong>{t('notifications.someone')}</strong>
+                            <strong>{(executor?.fullName || executor?.email || app.executorUserId || t('notifications.someone')).trim()}</strong>
                           </span>
-                        )}
+                        </Link>
                         <span className={`pill${isOverdue ? ' pill--danger' : ''}`}>{t(statusKey)}</span>
                       </div>
                       <p className="profileApplicationsListItem__message">{app.message ? app.message : ''}</p>

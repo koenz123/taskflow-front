@@ -21,6 +21,11 @@ let apiStore: { subs: Set<() => void> } = { subs: new Set() }
 let apiRefreshing = false
 let apiHasLoaded = false
 let apiLoadedForToken: string | null = null
+let apiPollId: number | null = null
+
+function notifyApi() {
+  for (const cb of apiStore.subs) cb()
+}
 
 export async function fetchNotifications() {
   if (!USE_API) return
@@ -35,7 +40,7 @@ export async function fetchNotifications() {
   if (!token) {
     apiSnapshot = []
     apiHasLoaded = true
-    for (const cb of apiStore.subs) cb()
+    notifyApi()
     apiRefreshing = false
     return
   }
@@ -46,13 +51,37 @@ export async function fetchNotifications() {
     // keep previous
   }
   apiRefreshing = false
-  for (const cb of apiStore.subs) cb()
+  notifyApi()
+}
+
+export async function refreshNotifications() {
+  if (!USE_API) return
+  apiHasLoaded = false
+  await fetchNotifications()
 }
 
 function subscribeApi(cb: () => void) {
   apiStore.subs.add(cb)
+  void fetchNotifications()
+  const onSession = () => {
+    void refreshNotifications()
+  }
+  if (apiPollId === null && typeof window !== 'undefined') {
+    apiPollId = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      void refreshNotifications()
+    }, 30_000)
+  }
+  window.addEventListener('ui-create-works.session.change', onSession)
+  window.addEventListener('storage', onSession)
   return () => {
     apiStore.subs.delete(cb)
+    if (apiStore.subs.size === 0 && apiPollId !== null) {
+      window.clearInterval(apiPollId)
+      apiPollId = null
+    }
+    window.removeEventListener('ui-create-works.session.change', onSession)
+    window.removeEventListener('storage', onSession)
   }
 }
 

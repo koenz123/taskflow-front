@@ -7,10 +7,11 @@ import { useUsers } from '@/entities/user/lib/useUsers'
 import './header.css'
 import { useDevMode } from '@/shared/dev/devMode'
 import { getActiveTheme, setTheme } from '@/shared/theme/theme'
-import { useNotifications } from '@/entities/notification/lib/useNotifications'
+import { refreshNotifications, useNotifications } from '@/entities/notification/lib/useNotifications'
 import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import { useTasks } from '@/entities/task/lib/useTasks'
 import { buildNotificationVM } from '@/entities/notification/lib/notificationViewModel'
+import { api } from '@/shared/api/api'
 
 const DEV_ARBITER_USER_ID = 'user_dev_arbiter'
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
@@ -185,18 +186,10 @@ export function Header() {
     </div>
   )
 
-  const arbiterNotif = (() => {
+  const notifBell = (() => {
     const user = auth.user
     if (!user) return null
-    if (user.role !== 'arbiter') return null
-
-    const list = notifications.filter(
-      (n) =>
-        n.type === 'dispute_opened' ||
-        n.type === 'dispute_message' ||
-        n.type === 'dispute_status' ||
-        n.type === 'dispute_sla_threshold',
-    )
+    const list = notifications
     const unread = list.filter((n) => !n.readAt).length
     const badgeText = unread > 99 ? '99+' : unread ? String(unread) : null
     const preview = list.slice(0, 6)
@@ -206,7 +199,7 @@ export function Header() {
         <button
           type="button"
           className="notif__btn"
-          aria-label={locale === 'ru' ? 'Уведомления арбитра' : 'Arbiter notifications'}
+          aria-label={locale === 'ru' ? 'Уведомления' : 'Notifications'}
           aria-haspopup="menu"
           aria-expanded={isNotifOpen}
           onClick={() => setIsNotifOpen((v) => !v)}
@@ -227,7 +220,13 @@ export function Header() {
                   type="button"
                   className="notif__smallBtn"
                   disabled={!unread}
-                  onClick={() => notificationRepo.markAllRead(user.id)}
+                  onClick={() => {
+                    if (USE_API) {
+                      void api.post('/notifications/read-all', {}).then(() => refreshNotifications())
+                    } else {
+                      notificationRepo.markAllRead(user.id)
+                    }
+                  }}
                 >
                   {locale === 'ru' ? 'Прочитать всё' : 'Mark all read'}
                 </button>
@@ -256,7 +255,11 @@ export function Header() {
                       to={to}
                       role="menuitem"
                       onClick={() => {
-                        notificationRepo.markRead(n.id)
+                        if (USE_API) {
+                          void api.post(`/notifications/${n.id}/read`, {}).then(() => refreshNotifications())
+                        } else {
+                          notificationRepo.markRead(n.id)
+                        }
                         setIsNotifOpen(false)
                       }}
                     >
@@ -375,7 +378,7 @@ export function Header() {
 
           {auth.user ? (
             <>
-              {arbiterNotif}
+              {notifBell}
               {langSwitcher}
 
               {auth.user.role !== 'arbiter' ? (

@@ -19,6 +19,11 @@ let apiStore: { subs: Set<() => void> } = { subs: new Set() }
 let apiRefreshing = false
 let apiHasLoaded = false
 let apiLoadedForToken: string | null = null
+let apiPollId: number | null = null
+
+function notifyApi() {
+  for (const cb of apiStore.subs) cb()
+}
 
 function sameList(a: TaskAssignment[], b: TaskAssignment[]) {
   if (a === b) return true
@@ -49,7 +54,7 @@ export async function fetchAssignments() {
   if (!token) {
     apiSnapshot = []
     apiHasLoaded = true
-    for (const cb of apiStore.subs) cb()
+    notifyApi()
     apiRefreshing = false
     return
   }
@@ -61,13 +66,37 @@ export async function fetchAssignments() {
     // keep previous
   }
   apiRefreshing = false
-  for (const cb of apiStore.subs) cb()
+  notifyApi()
+}
+
+export async function refreshAssignments() {
+  if (!USE_API) return
+  apiHasLoaded = false
+  await fetchAssignments()
 }
 
 function subscribeApi(cb: () => void) {
   apiStore.subs.add(cb)
+  void fetchAssignments()
+  const onSession = () => {
+    void refreshAssignments()
+  }
+  if (apiPollId === null && typeof window !== 'undefined') {
+    apiPollId = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      void refreshAssignments()
+    }, 30_000)
+  }
+  window.addEventListener('ui-create-works.session.change', onSession)
+  window.addEventListener('storage', onSession)
   return () => {
     apiStore.subs.delete(cb)
+    if (apiStore.subs.size === 0 && apiPollId !== null) {
+      window.clearInterval(apiPollId)
+      apiPollId = null
+    }
+    window.removeEventListener('ui-create-works.session.change', onSession)
+    window.removeEventListener('storage', onSession)
   }
 }
 

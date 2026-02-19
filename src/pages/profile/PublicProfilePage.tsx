@@ -1,9 +1,9 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/shared/auth/AuthContext'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { paths, reportProfilePath, userReviewsPath } from '@/app/router/paths'
 import { useI18n } from '@/shared/i18n/I18nContext'
-import { useUsers } from '@/entities/user/lib/useUsers'
+import { fetchUserById, useUsers } from '@/entities/user/lib/useUsers'
 import { SocialLinks } from '@/shared/social/SocialLinks'
 import { useWorks } from '@/entities/work/lib/useWorks'
 import { VideoEmbed } from '@/shared/ui/VideoEmbed'
@@ -12,6 +12,7 @@ import { useRatings } from '@/entities/rating/lib/useRatings'
 import { getEffectiveRatingSummaryForUser } from '@/shared/lib/ratingSummary'
 import { useRatingAdjustments } from '@/entities/ratingAdjustment/lib/useRatingAdjustments'
 import { useDevMode } from '@/shared/dev/devMode'
+import { SplashScreen } from '@/shared/ui/SplashScreen'
 import './profile.css'
 
 export function PublicProfilePage() {
@@ -23,6 +24,8 @@ export function PublicProfilePage() {
   const devMode = useDevMode()
   const ratings = useRatings()
   const adjustments = useRatingAdjustments()
+  const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
+  const [loadedOnce, setLoadedOnce] = useState(false)
 
   const user = userId ? users.find((u) => u.id === userId) ?? null : null
   const works = useWorks(user?.id ?? null)
@@ -55,12 +58,24 @@ export function PublicProfilePage() {
         : 'Back to applications'
     : t('task.details.backToTasks')
 
+  useEffect(() => {
+    if (!USE_API) return
+    if (!userId) return
+    setLoadedOnce(false)
+    void fetchUserById(userId).finally(() => setLoadedOnce(true))
+  }, [USE_API, userId])
+
   if (!user) {
+    if (USE_API && userId && !loadedOnce) return <SplashScreen />
     return (
       <main className="profilePage">
         <div className="profileHero">
           <h1 className="profileTitle">{t('auth.profile')}</h1>
-          <div className="profileEmpty">{t('task.details.notFound')}</div>
+          <div className="profileEmpty">
+            <strong>{t('profile.notFound.title')}</strong>
+            <div style={{ marginTop: 6, opacity: 0.9 }}>{t('profile.notFound.text')}</div>
+            {userId ? <div style={{ marginTop: 8, opacity: 0.75 }}>ID: {userId}</div> : null}
+          </div>
           <div>
             <Link to={backTo}>{t('task.details.backToTasks')}</Link>
           </div>

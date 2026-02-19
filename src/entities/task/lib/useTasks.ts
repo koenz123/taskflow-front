@@ -15,6 +15,9 @@ let apiRefreshing = false
 let apiHasLoaded = false
 let apiLoadedForToken: string | null = null
 
+const LOCAL_META = { loaded: true, refreshing: false }
+let apiMetaSnapshot = { loaded: false, refreshing: false }
+
 export async function fetchTasks() {
   if (!USE_API) return
   const token = sessionRepo.getToken()
@@ -25,10 +28,12 @@ export async function fetchTasks() {
   if (apiHasLoaded) return
   if (apiRefreshing) return
   apiRefreshing = true
+  apiMetaSnapshot = apiMetaSnapshot.refreshing ? apiMetaSnapshot : { loaded: apiHasLoaded, refreshing: true }
   if (!token) {
     apiSnapshot = []
     apiHasLoaded = true
     apiRefreshing = false
+    apiMetaSnapshot = { loaded: true, refreshing: false }
     for (const cb of apiStore.subs) cb()
     return
   }
@@ -39,6 +44,10 @@ export async function fetchTasks() {
     // keep previous snapshot on transient errors
   }
   apiRefreshing = false
+  apiMetaSnapshot =
+    apiMetaSnapshot.loaded === apiHasLoaded && apiMetaSnapshot.refreshing === apiRefreshing
+      ? apiMetaSnapshot
+      : { loaded: apiHasLoaded, refreshing: apiRefreshing }
   for (const cb of apiStore.subs) cb()
 }
 
@@ -91,5 +100,18 @@ function getSnapshot(): Task[] {
 
 export function useTasks() {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+}
+
+function getMetaSnapshot() {
+  // IMPORTANT: snapshot must be referentially stable when values didn't change,
+  // otherwise React can get stuck in a render loop.
+  if (!USE_API) return LOCAL_META
+  if (apiMetaSnapshot.loaded === apiHasLoaded && apiMetaSnapshot.refreshing === apiRefreshing) return apiMetaSnapshot
+  apiMetaSnapshot = { loaded: apiHasLoaded, refreshing: apiRefreshing }
+  return apiMetaSnapshot
+}
+
+export function useTasksMeta() {
+  return useSyncExternalStore(subscribe, getMetaSnapshot, getMetaSnapshot)
 }
 

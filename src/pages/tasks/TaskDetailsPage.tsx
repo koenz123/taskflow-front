@@ -2,9 +2,9 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { disputeThreadPath, paths, taskDetailsPath, taskEditPath, userProfilePath } from '@/app/router/paths'
 import { applicationRepo } from '@/entities/task/lib/applicationRepo'
-import { useApplications } from '@/entities/task/lib/useApplications'
+import { fetchApplicationsForTask, refreshApplications, upsertApplication, useApplications } from '@/entities/task/lib/useApplications'
 import { taskRepo } from '@/entities/task/lib/taskRepo'
-import { refreshTasks, useTasks } from '@/entities/task/lib/useTasks'
+import { refreshTasks, useTasks, useTasksMeta } from '@/entities/task/lib/useTasks'
 import { pickText } from '@/entities/task/lib/taskText'
 import { autoTranslateIfNeeded } from '@/entities/task/lib/autoTranslateTask'
 import { useI18n } from '@/shared/i18n/I18nContext'
@@ -15,14 +15,15 @@ import { useDevMode } from '@/shared/dev/devMode'
 import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import { formatTimeLeft, timeLeftMs } from '@/entities/task/lib/taskDeadline'
 import { timeAgo } from '@/shared/lib/timeAgo'
-import { useUsers } from '@/entities/user/lib/useUsers'
+import { fetchUsersByIds, useUsers } from '@/entities/user/lib/useUsers'
 import { balanceFreezeRepo } from '@/entities/user/lib/balanceFreezeRepo'
 import { balanceRepo } from '@/entities/user/lib/balanceRepo'
-import { useContracts } from '@/entities/contract/lib/useContracts'
+import { refreshContracts, useContracts } from '@/entities/contract/lib/useContracts'
 import { contractRepo } from '@/entities/contract/lib/contractRepo'
 import { submissionRepo } from '@/entities/submission/lib/submissionRepo'
 import { useSubmissions } from '@/entities/submission/lib/useSubmissions'
-import { useTaskAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
+import { refreshAssignments, useTaskAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
+import { refreshNotifications } from '@/entities/notification/lib/useNotifications'
 import { taskAssignmentRepo } from '@/entities/taskAssignment/lib/taskAssignmentRepo'
 import { executorRestrictionRepo } from '@/entities/executorSanction/lib/executorRestrictionRepo'
 import { noStartViolationCountLast90d } from '@/entities/executorSanction/lib/noStartSanctions'
@@ -42,6 +43,7 @@ import type { Task } from '@/entities/task/model/task'
 import { createId } from '@/shared/lib/id'
 import { notifyToTelegramAndUi } from '@/shared/notify/notify'
 import { ApiError, api } from '@/shared/api/api'
+import { SplashScreen } from '@/shared/ui/SplashScreen'
 
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
@@ -180,6 +182,7 @@ export function TaskDetailsPage() {
   const { taskId } = useParams()
   const users = useUsers()
   const tasks = useTasks()
+  const tasksMeta = useTasksMeta()
   const task = taskId ? tasks.find((x) => x.id === taskId) ?? null : null
   const [referenceVideoUrl, setReferenceVideoUrl] = useState<string | null>(null)
   const [referencePreviewOpen, setReferencePreviewOpen] = useState(false)
@@ -375,6 +378,9 @@ export function TaskDetailsPage() {
   }
 
   if (!task) {
+    if (USE_API && auth.status === 'authenticated' && !tasksMeta.loaded) {
+      return <SplashScreen />
+    }
     return (
       <main className="taskDetails">
         <div className="taskDetailsContainer">
@@ -540,6 +546,20 @@ export function TaskDetailsPage() {
 
   const canManageApplications = isPostedByMe && !isExpired
 
+  useEffect(() => {
+    if (!USE_API) return
+    if (!id) return
+    if (!isPostedByMe) return
+    void fetchApplicationsForTask(id).catch(() => {})
+  }, [id, isPostedByMe])
+
+  useEffect(() => {
+    if (!USE_API) return
+    if (!isPostedByMe) return
+    if (!taskApplications.length) return
+    void fetchUsersByIds(taskApplications.map((a) => a.executorUserId))
+  }, [isPostedByMe, taskApplications])
+
   const hasReviewLikeContractsForTask = useMemo(() => {
     if (!auth.user || auth.user.role !== 'customer') return false
     return contracts.some(
@@ -658,7 +678,7 @@ export function TaskDetailsPage() {
     void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.revisionRequested'), tone: 'info' })
   }
 
-  const handleAssignApplication = (applicationId: string, opts?: { bypassNoStartConfirm?: boolean }) => {
+  const handleAssignApplication = async (applicationId: string, opts?: { bypassNoStartConfirm?: boolean }) => {
     if (!canManageApplications) return
     if (!auth.user || auth.user.role !== 'customer') return
     if (!task.createdByUserId || task.createdByUserId !== auth.user.id) return
@@ -669,8 +689,29 @@ export function TaskDetailsPage() {
     if (task.assignedExecutorIds.includes(app.executorUserId)) return
 
     if (USE_API) {
-      void api.post(`/applications/${applicationId}/select`, {}).catch(() => {})
-      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.executorAssigned'), tone: 'success' })
+      try {
+        await api.post(`/applications/${applicationId}/select`, {})
+        await Promise.all([
+          refreshTasks(),
+          fetchApplicationsForTask(task.id).catch(() => []),
+          refreshContracts(),
+          refreshAssignments(),
+          refreshNotifications(),
+        ])
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.executorAssigned'), tone: 'success' })
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) {
+          void notifyToTelegramAndUi({
+            toast: toastUi,
+            telegramUserId,
+            text: locale === 'ru' ? 'Сессия истекла. Войдите заново.' : 'Session expired. Please sign in again.',
+            tone: 'error',
+          })
+        } else {
+          const message = e instanceof ApiError ? `${e.status ?? 'ERR'} ${String(e.message)}` : 'Failed to assign executor'
+          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: message, tone: 'error' })
+        }
+      }
       return
     }
 
@@ -743,8 +784,28 @@ export function TaskDetailsPage() {
     void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.executorAssigned'), tone: 'success' })
   }
 
-  const handleRejectApplication = (applicationId: string) => {
+  const handleRejectApplication = async (applicationId: string) => {
     if (!isPostedByMe) return
+    if (USE_API) {
+      try {
+        try {
+          await api.post(`/applications/${applicationId}/reject`, {})
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 404) {
+            await api.patch(`/applications/${applicationId}`, { status: 'rejected' })
+          } else {
+            throw e
+          }
+        }
+        await Promise.all([fetchApplicationsForTask(task.id).catch(() => []), refreshNotifications()])
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.applicationRejected'), tone: 'info' })
+      } catch (e) {
+        const message = e instanceof ApiError ? `${e.status ?? 'ERR'} ${String(e.message)}` : 'Failed to reject application'
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: message, tone: 'error' })
+      }
+      return
+    }
+
     applicationRepo.reject(applicationId)
     void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.applicationRejected'), tone: 'info' })
   }
@@ -1598,7 +1659,7 @@ export function TaskDetailsPage() {
                             </span>
                             <div>
                               <strong className="taskDetailsApplication__name">
-                                {executor?.fullName ?? executor?.email ?? t('notifications.someone')}
+                                {(executor?.fullName || executor?.email || a.executorId || t('notifications.someone')).trim()}
                               </strong>
                               <span className="taskDetailsApplication__status">
                                 {locale === 'ru' ? 'пауза запрошена' : 'pause requested'}
@@ -1606,15 +1667,13 @@ export function TaskDetailsPage() {
                             </div>
                           </div>
                           <div className="taskDetailsApplication__headerRight">
-                            {executor ? (
-                              <Link
-                                className="taskDetailsApplication__link"
-                                to={userProfilePath(executor.id)}
-                                state={{ backTo: taskDetailsPath(id) }}
-                              >
-                                {t('notifications.viewProfile')}
-                              </Link>
-                            ) : null}
+                            <Link
+                              className="taskDetailsApplication__link"
+                              to={userProfilePath(a.executorId)}
+                              state={{ backTo: taskDetailsPath(id) }}
+                            >
+                              {t('notifications.viewProfile')}
+                            </Link>
                             <div className="taskDetailsApplication__actions">
                               <button
                                 type="button"
@@ -1731,30 +1790,50 @@ export function TaskDetailsPage() {
                   type="button"
                   className="taskDetailsButton taskDetailsButton--primary"
                   disabled={applying || !respondGuard.ok}
-                  onClick={() => {
+                  onClick={async () => {
                     if (!task.createdByUserId || !auth.user) return
                     if (!executorRestrictionRepo.canRespond(auth.user.id, Date.now()).ok) return
                     const msg = applicationMessage.trim()
                     setApplying(true)
-                    if (USE_API) {
-                      void api.post(`/tasks/${id}/applications`, { message: msg || undefined }).catch(() => {})
-                    } else {
-                      applicationRepo.create({
-                        taskId: id,
-                        executorUserId: auth.user.id,
-                        message: msg || undefined,
-                      })
+                    try {
+                      if (USE_API) {
+                        const created = await api.post<any>(`/applications`, { taskId: id, message: msg || undefined })
+                        upsertApplication(created)
+                        await refreshApplications()
+                      } else {
+                        applicationRepo.create({
+                          taskId: id,
+                          executorUserId: auth.user.id,
+                          message: msg || undefined,
+                        })
+                        notificationRepo.addTaskApplication({
+                          recipientUserId: task.createdByUserId,
+                          actorUserId: auth.user.id,
+                          taskId: id,
+                        })
+                      }
+                      setApplicationMessage('')
+                      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.applied'), tone: 'success' })
+                    } catch (e) {
+                      if (e instanceof ApiError && e.status === 401) {
+                        void notifyToTelegramAndUi({
+                          toast: toastUi,
+                          telegramUserId,
+                          text: locale === 'ru' ? 'Сессия истекла. Войдите снова.' : 'Session expired. Please sign in again.',
+                          tone: 'error',
+                        })
+                        navigate(paths.login)
+                      } else {
+                        void notifyToTelegramAndUi({
+                          toast: toastUi,
+                          telegramUserId,
+                          text: locale === 'ru' ? 'Не удалось отправить отклик.' : 'Failed to apply.',
+                          tone: 'error',
+                        })
+                      }
+                    } finally {
+                      setApplying(false)
                     }
-                    if (!USE_API) {
-                      notificationRepo.addTaskApplication({
-                        recipientUserId: task.createdByUserId,
-                        actorUserId: auth.user.id,
-                        taskId: id,
-                      })
-                    }
-                    setApplicationMessage('')
-                    setApplying(false)
-                    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.applied'), tone: 'success' })
                   }}
                 >
                   {t('task.actions.apply')}
@@ -1846,12 +1925,11 @@ export function TaskDetailsPage() {
                   return (
                     <div
                       key={app.id}
-                      className={`taskDetailsApplication${executor ? ' taskDetailsApplication--clickable' : ''}${isReviewLikeContract ? ' taskDetailsApplication--review' : ''}`}
-                      role={executor ? 'link' : undefined}
-                      tabIndex={executor ? 0 : undefined}
-                      aria-label={executor ? t('notifications.viewProfile') : undefined}
+                      className={`taskDetailsApplication taskDetailsApplication--clickable${isReviewLikeContract ? ' taskDetailsApplication--review' : ''}`}
+                      role="link"
+                      tabIndex={0}
+                      aria-label={t('notifications.viewProfile')}
                       onClick={(e) => {
-                        if (!executor) return
                         const target = e.target
                         if (target instanceof HTMLElement) {
                           if (target.closest('a,button,input,textarea,select,[role="button"]')) return
@@ -1859,7 +1937,6 @@ export function TaskDetailsPage() {
                         navigate(userProfilePath(app.executorUserId), { state: { backTo: taskDetailsPath(id) } })
                       }}
                       onKeyDown={(e) => {
-                        if (!executor) return
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault()
                           navigate(userProfilePath(app.executorUserId), { state: { backTo: taskDetailsPath(id) } })
@@ -1879,7 +1956,7 @@ export function TaskDetailsPage() {
                           </span>
                           <div>
                             <strong className="taskDetailsApplication__name">
-                              {executor?.fullName ?? executor?.email ?? t('notifications.someone')}
+                              {(executor?.fullName || executor?.email || app.executorUserId || t('notifications.someone')).trim()}
                             </strong>
                             <StatusPill tone={tone} label={t(statusKey)} className="taskDetailsApplication__statusPill" />
                           </div>
