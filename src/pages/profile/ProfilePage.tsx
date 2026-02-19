@@ -666,7 +666,7 @@ export function ProfilePage() {
         <section className="profileMain">
           <header className="profileTopbar">
             <div className="profileTopbar__left">
-              {devMode.enabled ? (
+              {devMode.enabled && !USE_API ? (
                 <div className="profileSelectWrap" ref={switchRef}>
                   <button
                     type="button"
@@ -712,7 +712,7 @@ export function ProfilePage() {
 
             <div className="profileTopbar__right">
               <div className="profileTopbar__actions">
-                {devMode.enabled ? (
+                {devMode.enabled && !USE_API ? (
                   <Link className="profileBtn" to={paths.register}>
                     {t('account.add')}
                   </Link>

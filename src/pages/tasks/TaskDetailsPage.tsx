@@ -4,7 +4,7 @@ import { disputeThreadPath, paths, taskDetailsPath, taskEditPath, userProfilePat
 import { applicationRepo } from '@/entities/task/lib/applicationRepo'
 import { useApplications } from '@/entities/task/lib/useApplications'
 import { taskRepo } from '@/entities/task/lib/taskRepo'
-import { useTasks } from '@/entities/task/lib/useTasks'
+import { refreshTasks, useTasks } from '@/entities/task/lib/useTasks'
 import { pickText } from '@/entities/task/lib/taskText'
 import { autoTranslateIfNeeded } from '@/entities/task/lib/autoTranslateTask'
 import { useI18n } from '@/shared/i18n/I18nContext'
@@ -41,7 +41,7 @@ import { HelpTip } from '@/shared/ui/help-tip/HelpTip'
 import type { Task } from '@/entities/task/model/task'
 import { createId } from '@/shared/lib/id'
 import { notifyToTelegramAndUi } from '@/shared/notify/notify'
-import { api } from '@/shared/api/api'
+import { ApiError, api } from '@/shared/api/api'
 
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
@@ -749,11 +749,58 @@ export function TaskDetailsPage() {
     void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.applicationRejected'), tone: 'info' })
   }
 
-  const handleFinalPublish = () => {
+  const handleFinalPublish = async () => {
     if (!isPostedByMe) return
     if (task.status !== 'draft') return
+    if (auth.user?.role !== 'customer') {
+      void notifyToTelegramAndUi({
+        toast: toastUi,
+        telegramUserId,
+        text:
+          locale === 'ru'
+            ? auth.user?.role === 'pending'
+              ? 'Сначала выберите роль.'
+              : 'Опубликовать может только заказчик.'
+            : auth.user?.role === 'pending'
+              ? 'Choose a role first.'
+              : 'Only customers can publish tasks.',
+        tone: 'error',
+      })
+      if (auth.user?.role === 'pending') navigate(paths.chooseRole)
+      return
+    }
     if (USE_API) {
-      void api.post(`/tasks/${id}/publish`, {}).catch(() => {})
+      try {
+        await api.post(`/tasks/${id}/publish`, {})
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) {
+          void notifyToTelegramAndUi({
+            toast: toastUi,
+            telegramUserId,
+            text: locale === 'ru' ? 'Сессия истекла. Войдите снова.' : 'Session expired. Please sign in again.',
+            tone: 'error',
+          })
+          navigate(paths.login)
+          return
+        }
+        if (e instanceof ApiError && e.status === 403) {
+          void notifyToTelegramAndUi({
+            toast: toastUi,
+            telegramUserId,
+            text: locale === 'ru' ? 'Недостаточно прав для публикации.' : 'Not allowed to publish.',
+            tone: 'error',
+          })
+          return
+        }
+        void notifyToTelegramAndUi({
+          toast: toastUi,
+          telegramUserId,
+          text: locale === 'ru' ? 'Не удалось опубликовать задание.' : 'Failed to publish task.',
+          tone: 'error',
+        })
+        return
+      }
+      await refreshTasks()
     } else {
       taskRepo.update(id, (prev) => ({
         ...prev,

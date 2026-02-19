@@ -131,6 +131,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       company?: string
       password: string
     }) => {
+      if (USE_API) {
+        const API_BASE = import.meta.env.VITE_API_BASE ?? '/api'
+        const url = joinUrl(API_BASE, '/auth/register-email')
+        const r = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            role: input.role,
+            fullName: input.fullName,
+            phone: input.phone,
+            email: input.email,
+            password: input.password,
+          }),
+        })
+        const raw = (await r.json().catch(() => null)) as any
+        if (!r.ok) {
+          const code = typeof raw?.error === 'string' ? raw.error : `http_${r.status}`
+          if (code === 'email_taken') throw new Error('email_taken')
+          throw new Error(code)
+        }
+        const tokenFromServer = typeof raw?.token === 'string' ? raw.token : null
+        const serverUser = raw?.user
+        if (!tokenFromServer || !serverUser?.id) throw new Error('register_invalid_response')
+
+        sessionRepo.clear()
+        sessionRepo.setToken(String(tokenFromServer), { remember: true })
+        setToken(String(tokenFromServer))
+        sessionRepo.setUserId(String(serverUser.id), { remember: true })
+        setStatus('loading')
+        return
+      }
+
       // Dev-only: allow immediate sign-up without email verification link.
       if (devMode.enabled) {
         const created = await userRepo.create({
@@ -160,11 +192,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         passwordHash,
       })
     },
-    [devMode.enabled],
+    [USE_API, devMode.enabled],
   )
 
   const signIn = useCallback(
     async (email: string, password: string, opts?: { remember?: boolean }) => {
+      const remember = opts?.remember ?? true
+
+      if (USE_API) {
+        const API_BASE = import.meta.env.VITE_API_BASE ?? '/api'
+        const url = joinUrl(API_BASE, '/auth/login')
+        const r = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email.trim(), password }),
+        })
+        const raw = (await r.json().catch(() => null)) as any
+        if (!r.ok) {
+          const code = typeof raw?.error === 'string' ? raw.error : `http_${r.status}`
+          if (code === 'email_not_verified') throw new Error('email_not_verified')
+          throw new Error('invalid_credentials')
+        }
+        const tokenFromServer = typeof raw?.token === 'string' ? raw.token : null
+        const serverUser = raw?.user
+        if (!tokenFromServer || !serverUser?.id) throw new Error('login_invalid_response')
+
+        sessionRepo.clear()
+        sessionRepo.setToken(String(tokenFromServer), { remember })
+        setToken(String(tokenFromServer))
+        sessionRepo.setUserId(String(serverUser.id), { remember })
+        setStatus('loading')
+        return
+      }
+
+      // Local (non-API) auth: ensure we don't keep a stale TG/API token around.
       const u = await userRepo.verifyPassword(email, password)
       if (!u) throw new Error('invalid_credentials')
       if (!u.emailVerified) {
@@ -172,11 +233,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!ok) throw new Error('email_not_verified')
         userRepo.markEmailVerified(u.email)
       }
-      sessionRepo.setUserId(u.id, { remember: opts?.remember })
+      sessionRepo.clear()
+      sessionRepo.setUserId(u.id, { remember })
       setUserStable(u)
       setStatus('authenticated')
     },
-    [],
+    [USE_API, setUserStable],
   )
 
   const signInWithTelegram = useCallback(
@@ -204,8 +266,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       const existing = userRepo.getById(serverId)
       const existingRole = existing?.role ?? null
-      const chosenAlready = existingRole === 'customer' || existingRole === 'executor'
-      const desiredRole: UserRole = chosenAlready ? existingRole : 'pending'
+      const serverRole = (data.user as any)?.role
+      const desiredRole: UserRole =
+        serverRole === 'customer' || serverRole === 'executor'
+          ? serverRole
+          : existingRole === 'customer' || existingRole === 'executor'
+            ? existingRole
+            : 'pending'
 
       const u = userRepo.upsertFromServer({
         ...data.user,
@@ -255,12 +322,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const switchUser = useCallback(
     (userId: string) => {
+      // In API mode, identity is derived from the JWT token (/me).
+      // Local "switch user" makes UI and API auth diverge (refresh snaps back).
+      if (USE_API) {
+        sessionRepo.clear()
+        setToken(null)
+        setUserStable(null)
+        setStatus('unauthenticated')
+        return
+      }
       sessionRepo.setUserId(userId)
       const u = userRepo.getById(userId)
       setUserStable(u)
       setStatus(u ? 'authenticated' : 'unauthenticated')
     },
-    [setUserStable],
+    [USE_API, setUserStable],
   )
 
   const updateProfile = useCallback(

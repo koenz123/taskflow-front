@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { paths, taskDetailsPath } from '@/app/router/paths'
 import { taskRepo } from '@/entities/task/lib/taskRepo'
+import { refreshTasks } from '@/entities/task/lib/useTasks'
 import { useI18n } from '@/shared/i18n/I18nContext'
 import type { TranslationKey } from '@/shared/i18n/translations'
 import './create-task.css'
 import type { LocalizedText, Task } from '@/entities/task/model/task'
 import { useAuth } from '@/shared/auth/AuthContext'
-import { api } from '@/shared/api/api'
+import { ApiError, api } from '@/shared/api/api'
 import { MultiSelect } from '@/shared/ui/multi-select/MultiSelect'
 import { CustomSelect } from '@/shared/ui/custom-select/CustomSelect'
 import { TASK_FORMAT_OPTIONS, TASK_PLATFORM_OPTIONS } from '@/entities/task/lib/taskMetaCatalog'
@@ -341,6 +342,7 @@ export function CreateTaskPage() {
       return
     }
     if (auth.user.role !== 'customer') {
+      if (auth.user.role === 'pending') navigate(paths.chooseRole)
       return
     }
 
@@ -383,21 +385,74 @@ export function CreateTaskPage() {
       maxExecutors: maxExecutorsValue,
     }
 
-    const task = USE_API
-      ? await api.post<Task>('/tasks', nextData)
-      : (() => {
-          // If we're coming back from the final publish step, update the existing draft
-          // instead of creating duplicates.
-          const existingDraft = draft?.id ? taskRepo.getById(draft.id) : null
-          return existingDraft && existingDraft.status === 'draft'
-            ? (taskRepo.update(existingDraft.id, (prev) => ({
-                ...prev,
-                ...nextData,
-                createdByUserId: auth.user!.id,
-                status: 'draft',
-              })) ?? existingDraft)
-            : taskRepo.create({ ...nextData, createdByUserId: auth.user!.id, status: 'draft' as const } as any)
-        })()
+    let task: Task
+    if (USE_API) {
+      let created: Task
+      try {
+        created = await api.post<Task>('/tasks', nextData)
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) {
+          alert(locale === 'ru' ? 'Сессия истекла. Войдите снова.' : 'Session expired. Please sign in again.')
+          navigate(paths.login)
+          return
+        }
+        if (e instanceof ApiError) {
+          const details = (() => {
+            try {
+              return JSON.stringify(e.payload)
+            } catch {
+              return String(e.payload)
+            }
+          })()
+          alert(
+            locale === 'ru'
+              ? `Не удалось создать задание (HTTP ${e.status ?? '—'}: ${e.message}).\n${details}`
+              : `Failed to create task (HTTP ${e.status ?? '—'}: ${e.message}).\n${details}`,
+          )
+          return
+        }
+        alert(
+          locale === 'ru'
+            ? 'Не удалось опубликовать задание. Попробуйте ещё раз.'
+            : 'Failed to publish task. Please try again.',
+        )
+        return
+      }
+
+      // "Publish" in create flow should actually publish the task. If publish fails,
+      // keep the created draft and send user to task details (where publish can be retried).
+      try {
+        await api.post(`/tasks/${created.id}/publish`, {})
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) {
+          alert(locale === 'ru' ? 'Сессия истекла. Войдите снова.' : 'Session expired. Please sign in again.')
+          navigate(paths.login)
+          return
+        }
+        // task is created; avoid duplicates by continuing to details page
+        alert(
+          locale === 'ru'
+            ? 'Задание создано, но не удалось опубликовать. Открою страницу задания — попробуйте опубликовать ещё раз.'
+            : 'Task was created, but publish failed. Opening task page so you can retry.',
+        )
+      }
+
+      task = created
+      await refreshTasks()
+    } else {
+      // If we're coming back from the final publish step, update the existing draft
+      // instead of creating duplicates.
+      const existingDraft = draft?.id ? taskRepo.getById(draft.id) : null
+      task =
+        existingDraft && existingDraft.status === 'draft'
+          ? (taskRepo.update(existingDraft.id, (prev) => ({
+              ...prev,
+              ...nextData,
+              createdByUserId: auth.user!.id,
+              status: 'open',
+            })) ?? existingDraft)
+          : taskRepo.create({ ...nextData, createdByUserId: auth.user!.id, status: 'open' as const } as any)
+    }
 
     navigate(taskDetailsPath(task.id), {
       state: stateBackTo ? { backTo: stateBackTo } : { fromCreateDraft: true },
@@ -434,6 +489,9 @@ export function CreateTaskPage() {
           <div className="actionsRow" style={{ marginTop: 14 }}>
             <Link className="primaryLink" to={paths.tasks}>
               {t('task.details.backToTasks')}
+            </Link>
+            <Link className="secondaryLink" to={paths.chooseRole}>
+              {locale === 'ru' ? 'Сменить роль' : 'Switch role'}
             </Link>
           </div>
         </div>

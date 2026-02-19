@@ -46,9 +46,11 @@ function safeWrite(entries: LogEntry[]) {
 }
 
 function append(entry: LogEntry) {
-  // Console is still useful during infra bring-up.
-  if (entry.kind === 'event') console.info('[event]', entry.name, { data: entry.data, ctx: entry.ctx })
-  else console.error('[error]', entry.code, { data: entry.data, ctx: entry.ctx })
+  // Keep console quiet outside DEV; persist logs to localStorage either way.
+  if (import.meta.env.DEV) {
+    if (entry.kind === 'event') console.info('[event]', entry.name, { data: entry.data, ctx: entry.ctx })
+    else console.error('[error]', entry.code, { data: entry.data, ctx: entry.ctx })
+  }
 
   try {
     const prev = safeParse(localStorage.getItem(STORAGE_KEY))

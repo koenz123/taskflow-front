@@ -13,6 +13,7 @@ import { useTasks } from '@/entities/task/lib/useTasks'
 import { buildNotificationVM } from '@/entities/notification/lib/notificationViewModel'
 
 const DEV_ARBITER_USER_ID = 'user_dev_arbiter'
+const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
 export function Header() {
   const { locale, setLocale, t } = useI18n()
@@ -43,8 +44,8 @@ export function Header() {
     return map
   }, [tasks])
 
-  const isArbiter = Boolean(auth.user?.role === 'arbiter' && devMode.enabled)
-  const canJumpToArbiter = Boolean(auth.user && devMode.enabled && auth.user.role !== 'arbiter')
+  const isArbiter = Boolean(auth.user?.role === 'arbiter' && devMode.enabled && !USE_API)
+  const canJumpToArbiter = Boolean(auth.user && devMode.enabled && !USE_API && auth.user.role !== 'arbiter')
   const arbiterExists = Boolean(userById.get(DEV_ARBITER_USER_ID))
   const avatarUrl = auth.user?.avatarDataUrl ?? null
   const avatarLabel = auth.user?.fullName?.trim() || auth.user?.email || ''
@@ -302,6 +303,12 @@ export function Header() {
             <span className="devToggle__label">{t('dev.mode')}</span>
             <span className="devToggle__state">{devMode.enabled ? t('dev.on') : t('dev.off')}</span>
           </button>
+
+          {USE_API && devMode.enabled ? (
+            <span style={{ fontSize: 12, opacity: 0.8, marginLeft: 10 }}>
+              {locale === 'ru' ? 'Dev mode ограничен в API‑режиме' : 'Dev mode is limited in API mode'}
+            </span>
+          ) : null}
 
           {canJumpToArbiter ? (
             <button

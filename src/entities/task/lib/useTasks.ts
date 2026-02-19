@@ -42,11 +42,25 @@ export async function fetchTasks() {
   for (const cb of apiStore.subs) cb()
 }
 
+export async function refreshTasks() {
+  if (!USE_API) return
+  apiHasLoaded = false
+  await fetchTasks()
+}
+
 function subscribe(callback: () => void) {
   if (USE_API) {
     apiStore.subs.add(callback)
+    void fetchTasks()
+    const onSession = () => {
+      void refreshTasks()
+    }
+    window.addEventListener('ui-create-works.session.change', onSession)
+    window.addEventListener('storage', onSession)
     return () => {
       apiStore.subs.delete(callback)
+      window.removeEventListener('ui-create-works.session.change', onSession)
+      window.removeEventListener('storage', onSession)
     }
   }
 
