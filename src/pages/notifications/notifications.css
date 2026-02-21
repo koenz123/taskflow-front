@@ -119,7 +119,7 @@
 
 .notificationsItemMain {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
   gap: 12px;
   padding: 12px 12px;
   align-items: start;
@@ -137,12 +137,45 @@
 }
 
 .notificationsItemIcon {
-  width: 22px;
-  height: 22px;
+  width: 34px;
+  height: 34px;
   display: inline-grid;
   place-items: center;
+  font-size: 18px;
   opacity: 0.95;
   transform: translateY(1px);
+  border-radius: 999px;
+  border: 1px solid var(--border2);
+  background: var(--surface1);
+  position: relative;
+  overflow: hidden;
+}
+
+.notifAvatar__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.notifAvatar__fallback {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  opacity: 0.9;
+}
+
+.notifAvatar__badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  border: 1px solid var(--border2);
+  background: var(--card2);
 }
 
 .notificationsItemBody {
@@ -198,7 +231,7 @@
 
 @media (max-width: 720px) {
   .notificationsItemMain {
-    grid-template-columns: 22px minmax(0, 1fr);
+    grid-template-columns: 34px minmax(0, 1fr);
   }
 
   .notificationsItemTime {

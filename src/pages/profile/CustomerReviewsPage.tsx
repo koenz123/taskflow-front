@@ -17,12 +17,22 @@ import { useDisputes } from '@/entities/dispute/lib/useDisputes'
 import { disputeRepo } from '@/entities/dispute/lib/disputeRepo'
 import { useDevMode } from '@/shared/dev/devMode'
 import { RatingModal } from '@/features/rating/RatingModal'
+import { createRatingApi, refreshRatings } from '@/entities/rating/lib/useRatings'
 import { ratingRepo } from '@/entities/rating/lib/ratingRepo'
 import { RevisionRequestModal } from '@/features/revision/RevisionRequestModal'
 import { disputeArbitrationService } from '@/shared/services/disputeArbitrationService'
 import './profile.css'
 import { taskAssignmentRepo } from '@/entities/taskAssignment/lib/taskAssignmentRepo'
+import { useTaskAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
 import { StatusPill } from '@/shared/ui/status-pill/StatusPill'
+import { ApiError, api } from '@/shared/api/api'
+import { refreshDisputes } from '@/entities/dispute/lib/useDisputes'
+import { refreshContracts } from '@/entities/contract/lib/useContracts'
+import { refreshAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
+import { refreshTasks } from '@/entities/task/lib/useTasks'
+import { refreshNotifications } from '@/entities/notification/lib/useNotifications'
+
+const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
 export function CustomerReviewsPage() {
   const { t, locale } = useI18n()
@@ -35,6 +45,7 @@ export function CustomerReviewsPage() {
   const contracts = useContracts()
   const submissions = useSubmissions()
   const disputes = useDisputes()
+  const taskAssignments = useTaskAssignments()
   const [ratingContractId, setRatingContractId] = useState<string | null>(null)
   const [revisionModalContractId, setRevisionModalContractId] = useState<string | null>(null)
   const [blockedModal, setBlockedModal] = useState<null | { title: string; message: string }>(null)
@@ -104,10 +115,12 @@ export function CustomerReviewsPage() {
   }
 
   const approve = (contractId: string) => {
-    const contract = contractRepo.getById(contractId)
+    const contract = USE_API ? (contracts.find((c) => c.id === contractId) ?? null) : contractRepo.getById(contractId)
     if (!contract) return
 
-    const assignment = taskAssignmentRepo.getForTaskExecutor(contract.taskId, contract.executorId)
+    const assignment = USE_API
+      ? taskAssignments.find((a) => a.taskId === contract.taskId && a.executorId === contract.executorId) ?? null
+      : taskAssignmentRepo.getForTaskExecutor(contract.taskId, contract.executorId)
     if (!assignment?.startedAt) {
       const msg =
         locale === 'ru'
@@ -117,6 +130,25 @@ export function CustomerReviewsPage() {
         title: locale === 'ru' ? 'Нельзя принять работу' : 'Cannot approve',
         message: msg,
       })
+      return
+    }
+
+    if (USE_API) {
+      void (async () => {
+        try {
+          await api.post(`/contracts/${encodeURIComponent(contract.id)}/approve`, {})
+          await Promise.all([refreshContracts(), refreshAssignments(), refreshTasks(), refreshNotifications()])
+          setRatingContractId(contract.id)
+        } catch (e) {
+          const msg =
+            e instanceof ApiError
+              ? `${e.status ?? 'ERR'} ${String(e.message)}`
+              : locale === 'ru'
+                ? 'Не удалось принять работу.'
+                : 'Failed to approve.'
+          setBlockedModal({ title: locale === 'ru' ? 'Ошибка' : 'Error', message: msg })
+        }
+      })()
       return
     }
 
@@ -145,13 +177,41 @@ export function CustomerReviewsPage() {
   }
 
   const requestRevision = (contractId: string, message: string) => {
-    const contract = contractRepo.getById(contractId)
+    const contract = USE_API ? (contracts.find((c) => c.id === contractId) ?? null) : contractRepo.getById(contractId)
     if (!contract) return
     // Allow only limited revision requests per contract (usually 2).
     const included = contract.revisionIncluded ?? 0
     const used = contract.revisionUsed ?? 0
     if (included <= 0) return
     if (used >= included) return
+
+    if (USE_API) {
+      void (async () => {
+        try {
+          const id = encodeURIComponent(contract.id)
+          try {
+            await api.post(`/contracts/${id}/request-revision`, { message })
+          } catch (e) {
+            // Back-compat: older backends used /revision
+            if (e instanceof ApiError && e.status === 404) {
+              await api.post(`/contracts/${id}/revision`, { message })
+            } else {
+              throw e
+            }
+          }
+          await Promise.all([refreshContracts(), refreshAssignments(), refreshTasks(), refreshNotifications()])
+        } catch (e) {
+          const msg =
+            e instanceof ApiError
+              ? `${e.status ?? 'ERR'} ${String(e.message)}`
+              : locale === 'ru'
+                ? 'Не удалось отправить на доработку.'
+                : 'Failed to request revision.'
+          setBlockedModal({ title: locale === 'ru' ? 'Ошибка' : 'Error', message: msg })
+        }
+      })()
+      return
+    }
 
     contractRepo.setStatus(contract.id, 'revision_requested')
     contractRepo.incrementRevisionUsed(contract.id)
@@ -174,13 +234,32 @@ export function CustomerReviewsPage() {
   }
 
   const openDispute = (contractId: string) => {
-    const contract = contractRepo.getById(contractId)
+    const contract = USE_API ? (contracts.find((c) => c.id === contractId) ?? null) : contractRepo.getById(contractId)
     if (!contract) return
     if (contract.status === 'disputed' || contract.status === 'resolved' || contract.status === 'approved' || contract.status === 'cancelled') {
       return
     }
     const used = contract.revisionUsed ?? 0
     if (used < 2) return
+
+    if (USE_API) {
+      void (async () => {
+        try {
+          const created = await api.post<any>(`/disputes`, {
+            contractId: contract.id,
+            reason: { categoryId: 'universal', reasonId: 'other' },
+          })
+          await Promise.all([refreshDisputes(), refreshContracts(), refreshAssignments(), refreshTasks(), refreshNotifications()])
+          const id = typeof created?.id === 'string' ? created.id : (disputes.find((d) => d.contractId === contract.id)?.id ?? null)
+          if (id) navigate(disputeThreadPath(id))
+        } catch (e) {
+          const msg =
+            e instanceof ApiError ? `${e.status ?? 'ERR'} ${String(e.message)}` : locale === 'ru' ? 'Не удалось открыть спор.' : 'Failed to open dispute.'
+          setBlockedModal({ title: locale === 'ru' ? 'Спор' : 'Dispute', message: msg })
+        }
+      })()
+      return
+    }
 
     const dispute = disputeRepo.open({
       contractId: contract.id,
@@ -259,7 +338,11 @@ export function CustomerReviewsPage() {
                 const task = tasks.find((x) => x.id === contract.taskId) ?? null
                 const executor = users.find((u) => u.id === contract.executorId) ?? null
                 const dispute = disputes.find((d) => d.contractId === contract.id) ?? null
-                const started = Boolean(taskAssignmentRepo.getForTaskExecutor(contract.taskId, contract.executorId)?.startedAt)
+                const started = Boolean(
+                  USE_API
+                    ? taskAssignments.find((a) => a.taskId === contract.taskId && a.executorId === contract.executorId)?.startedAt
+                    : taskAssignmentRepo.getForTaskExecutor(contract.taskId, contract.executorId)?.startedAt,
+                )
                 const latestForContract = submissions
                   .filter((s) => s.contractId === contract.id && s.status === 'submitted')
                   .slice()
@@ -479,15 +562,37 @@ export function CustomerReviewsPage() {
       <RatingModal
         open={Boolean(ratingContractId)}
         subjectName={(() => {
-          const c = ratingContractId ? contractRepo.getById(ratingContractId) : null
+          const c = ratingContractId
+            ? USE_API
+              ? contracts.find((x) => x.id === ratingContractId) ?? null
+              : contractRepo.getById(ratingContractId)
+            : null
           const u = c ? users.find((x) => x.id === c.executorId) ?? null : null
           return u?.fullName
         })()}
         onClose={() => setRatingContractId(null)}
         onSubmit={({ rating, comment }) => {
           if (!ratingContractId || !auth.user) return
-          const c = contractRepo.getById(ratingContractId)
+          const c = USE_API ? contracts.find((x) => x.id === ratingContractId) ?? null : contractRepo.getById(ratingContractId)
           if (!c) return
+          if (USE_API) {
+            void (async () => {
+              try {
+                await createRatingApi({ contractId: c.id, toUserId: c.executorId, rating, comment })
+                await Promise.all([refreshRatings(), refreshNotifications()])
+                setRatingContractId(null)
+              } catch (e) {
+                const msg =
+                  e instanceof ApiError
+                    ? `${e.status ?? 'ERR'} ${String(e.message)}`
+                    : locale === 'ru'
+                      ? 'Не удалось отправить оценку.'
+                      : 'Failed to submit rating.'
+                setBlockedModal({ title: locale === 'ru' ? 'Ошибка' : 'Error', message: msg })
+              }
+            })()
+            return
+          }
           ratingRepo.upsert({
             contractId: c.id,
             fromUserId: auth.user.id,
@@ -502,7 +607,11 @@ export function CustomerReviewsPage() {
       <RevisionRequestModal
         open={Boolean(revisionModalContractId)}
         executorName={(() => {
-          const c = revisionModalContractId ? contractRepo.getById(revisionModalContractId) : null
+          const c = revisionModalContractId
+            ? USE_API
+              ? contracts.find((x) => x.id === revisionModalContractId) ?? null
+              : contractRepo.getById(revisionModalContractId)
+            : null
           const u = c ? users.find((x) => x.id === c.executorId) ?? null : null
           return u?.fullName
         })()}

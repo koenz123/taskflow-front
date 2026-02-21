@@ -1,8 +1,15 @@
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { disputeThreadPath, paths, taskDetailsPath, taskEditPath, userProfilePath } from '@/app/router/paths'
 import { applicationRepo } from '@/entities/task/lib/applicationRepo'
-import { fetchApplicationsForTask, refreshApplications, upsertApplication, useApplications } from '@/entities/task/lib/useApplications'
+import {
+  fetchApplicationsForTask,
+  refreshApplications,
+  rejectApplicationApi,
+  selectApplicationApi,
+  upsertApplication,
+  useApplications,
+} from '@/entities/task/lib/useApplications'
 import { taskRepo } from '@/entities/task/lib/taskRepo'
 import { refreshTasks, useTasks, useTasksMeta } from '@/entities/task/lib/useTasks'
 import { pickText } from '@/entities/task/lib/taskText'
@@ -21,17 +28,18 @@ import { balanceRepo } from '@/entities/user/lib/balanceRepo'
 import { refreshContracts, useContracts } from '@/entities/contract/lib/useContracts'
 import { contractRepo } from '@/entities/contract/lib/contractRepo'
 import { submissionRepo } from '@/entities/submission/lib/submissionRepo'
-import { useSubmissions } from '@/entities/submission/lib/useSubmissions'
+import { createSubmissionApi, refreshSubmissions, useSubmissions } from '@/entities/submission/lib/useSubmissions'
 import { refreshAssignments, useTaskAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
 import { refreshNotifications } from '@/entities/notification/lib/useNotifications'
 import { taskAssignmentRepo } from '@/entities/taskAssignment/lib/taskAssignmentRepo'
 import { executorRestrictionRepo } from '@/entities/executorSanction/lib/executorRestrictionRepo'
 import { noStartViolationCountLast90d } from '@/entities/executorSanction/lib/noStartSanctions'
 import { disputeRepo } from '@/entities/dispute/lib/disputeRepo'
-import { useDisputes } from '@/entities/dispute/lib/useDisputes'
+import { refreshDisputes, useDisputes } from '@/entities/dispute/lib/useDisputes'
 import { systemEventRepo } from '@/entities/systemEvent/lib/systemEventRepo'
 import { PauseRequestModal } from '@/features/pause/PauseRequestModal'
 import { RatingModal } from '@/features/rating/RatingModal'
+import { createRatingApi, refreshRatings } from '@/entities/rating/lib/useRatings'
 import { ratingRepo } from '@/entities/rating/lib/ratingRepo'
 import { StatusPill, type StatusTone } from '@/shared/ui/status-pill/StatusPill'
 import { NoStartAssignModal } from '@/features/sanctions/NoStartAssignModal'
@@ -44,8 +52,11 @@ import { createId } from '@/shared/lib/id'
 import { notifyToTelegramAndUi } from '@/shared/notify/notify'
 import { ApiError, api } from '@/shared/api/api'
 import { SplashScreen } from '@/shared/ui/SplashScreen'
+import { uploadFileToServer } from '@/shared/api/uploads'
+import type { SubmissionFile } from '@/entities/submission/model/submission'
 
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
+const MAX_UPLOAD_VIDEO_MB = 60
 
 function formatBudget(amount?: number, currency?: string) {
   if (!amount) return null
@@ -184,6 +195,14 @@ export function TaskDetailsPage() {
   const tasks = useTasks()
   const tasksMeta = useTasksMeta()
   const task = taskId ? tasks.find((x) => x.id === taskId) ?? null : null
+  const authorId = task?.createdByUserId ?? null
+
+  useEffect(() => {
+    if (!USE_API) return
+    if (!authorId) return
+    if (users.some((u) => u.id === authorId)) return
+    void fetchUsersByIds([authorId]).catch(() => {})
+  }, [authorId, users])
   const [referenceVideoUrl, setReferenceVideoUrl] = useState<string | null>(null)
   const [referencePreviewOpen, setReferencePreviewOpen] = useState(false)
   const [referencePreviewTarget, setReferencePreviewTarget] = useState<null | { blobId: string; name: string }>(null)
@@ -252,14 +271,79 @@ export function TaskDetailsPage() {
       : [],
   )
   const [completionError, setCompletionError] = useState<string | null>(null)
-  const [uploadVideo, setUploadVideo] = useState<null | { blobId: string; name: string; mimeType: string }>(null)
+  const [uploadVideo, setUploadVideo] = useState<
+    | null
+    | { kind: 'idb'; blobId: string; name: string; mimeType: string }
+    | { kind: 'url'; url: string; name: string; mimeType: string }
+  >(null)
+  const [uploadVideoBusy, setUploadVideoBusy] = useState(false)
+  async function postWithFallback<T = any>(paths: string[], body: unknown) {
+    let lastErr: unknown = null
+    for (const p of paths) {
+      try {
+        return await api.post<T>(p, body)
+      } catch (e) {
+        lastErr = e
+        if (e instanceof ApiError && e.status === 404) continue
+        throw e
+      }
+    }
+    throw lastErr ?? new Error('request_failed')
+  }
+
+  async function requestPauseApi(input: { assignmentId: string; reasonId: string; durationHours: number; comment?: string }) {
+    const id = encodeURIComponent(input.assignmentId)
+    const body = {
+      reasonId: input.reasonId,
+      durationHours: input.durationHours,
+      durationMs: Math.round(input.durationHours * 60 * 60 * 1000),
+      message: input.comment || undefined,
+      comment: input.comment || undefined,
+    }
+    await postWithFallback(
+      [
+        `/assignments/${id}/request-pause`,
+        `/assignments/${id}/pause/request`,
+        `/assignments/${id}/request_pause`,
+      ],
+      body,
+    )
+  }
+
+  async function acceptPauseApi(assignmentId: string) {
+    const id = encodeURIComponent(assignmentId)
+    await postWithFallback([`/assignments/${id}/accept-pause`, `/assignments/${id}/pause/accept`, `/assignments/${id}/accept_pause`], {})
+  }
+
+  async function rejectPauseApi(assignmentId: string) {
+    const id = encodeURIComponent(assignmentId)
+    await postWithFallback([`/assignments/${id}/reject-pause`, `/assignments/${id}/pause/reject`, `/assignments/${id}/reject_pause`], {})
+  }
+
+  async function switchExecutorApi(assignmentId: string) {
+    const id = encodeURIComponent(assignmentId)
+    await postWithFallback(
+      [
+        `/assignments/${id}/remove`,
+        `/assignments/${id}/assignment-remove`,
+        `/assignments/${id}/unassign`,
+        `/assignments/${id}/cancel`,
+        `/assignments/${id}/cancel-by-customer`,
+      ],
+      {},
+    )
+  }
   const [submissionMessage, setSubmissionMessage] = useState('')
   const [copyrightWaiverAccepted, setCopyrightWaiverAccepted] = useState(false)
   const [copyrightWaiverTouched, setCopyrightWaiverTouched] = useState(false)
   const [copyrightHelpOpen, setCopyrightHelpOpen] = useState(false)
   const [pauseModalOpen, setPauseModalOpen] = useState(false)
+  const [pauseDecisionBusyIds, setPauseDecisionBusyIds] = useState<Set<string>>(() => new Set())
+  const pauseDecisionBusyRef = useRef<Set<string>>(new Set())
+  const [pauseDecisionDoneIds, setPauseDecisionDoneIds] = useState<Set<string>>(() => new Set())
   const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false)
   const [submittedModalOpen, setSubmittedModalOpen] = useState(false)
+  const [optimisticSubmittedForReview, setOptimisticSubmittedForReview] = useState(false)
   const [rateCustomerOpen, setRateCustomerOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteAfterPath, setDeleteAfterPath] = useState<string | null>(null)
@@ -273,10 +357,40 @@ export function TaskDetailsPage() {
     [applications, task],
   )
   const assignmentsForTask = useMemo(() => (task ? assignments.filter((a) => a.taskId === task.id) : []), [assignments, task])
+  const pauseKindForTask = useMemo(() => {
+    // paused > pause_requested
+    let kind: null | 'paused' | 'pause_requested' = null
+    for (const a of assignmentsForTask) {
+      if (a.status === 'paused') return 'paused'
+      if (a.status === 'pause_requested') kind = 'pause_requested'
+    }
+    return kind
+  }, [assignmentsForTask])
   const pauseRequestsForTask = useMemo(
-    () => assignmentsForTask.filter((a) => a.status === 'pause_requested'),
-    [assignmentsForTask],
+    () => assignmentsForTask.filter((a) => a.status === 'pause_requested' && !pauseDecisionDoneIds.has(a.id)),
+    [assignmentsForTask, pauseDecisionDoneIds],
   )
+  const isPauseDecisionBusy = (assignmentId: string) =>
+    pauseDecisionBusyRef.current.has(assignmentId) || pauseDecisionBusyIds.has(assignmentId)
+  const isPauseDecisionDone = (assignmentId: string) => pauseDecisionDoneIds.has(assignmentId)
+  const markPauseDecisionBusy = (assignmentId: string, busy: boolean) => {
+    if (busy) pauseDecisionBusyRef.current.add(assignmentId)
+    else pauseDecisionBusyRef.current.delete(assignmentId)
+    setPauseDecisionBusyIds((prev) => {
+      const next = new Set(prev)
+      if (busy) next.add(assignmentId)
+      else next.delete(assignmentId)
+      return next
+    })
+  }
+  const markPauseDecisionDone = (assignmentId: string, done: boolean) => {
+    setPauseDecisionDoneIds((prev) => {
+      const next = new Set(prev)
+      if (done) next.add(assignmentId)
+      else next.delete(assignmentId)
+      return next
+    })
+  }
   const userApplication = useMemo(
     () =>
       currentUser && task
@@ -292,6 +406,7 @@ export function TaskDetailsPage() {
 
   useEffect(() => {
     if (!taskId || !task) return
+    setOptimisticSubmittedForReview(false)
     setCompletionLinks(
       requiresCompletionLinks
         ? initCompletionLinks({
@@ -426,7 +541,7 @@ export function TaskDetailsPage() {
   }, [assignments, currentUser, task])
   const myDispute = useMemo(() => {
     if (!myContract) return null
-    return disputeRepo.getForContract(myContract.id)
+    return USE_API ? disputes.find((d) => d.contractId === myContract.id) ?? null : disputeRepo.getForContract(myContract.id)
   }, [disputes, myContract])
   const canRateCustomerNow = useMemo(() => {
     if (!currentUser || currentUser.role !== 'executor') return false
@@ -463,7 +578,7 @@ export function TaskDetailsPage() {
     currentUser?.role === 'executor' &&
     isExecutorAssigned &&
     // Prefer contract state; fallback to assignment only if contract is missing.
-    (myContract ? myContract.status === 'submitted' : myAssignment?.status === 'submitted')
+    (optimisticSubmittedForReview || (myContract ? myContract.status === 'submitted' : myAssignment?.status === 'submitted'))
   const overdueAssignments = useMemo(() => {
     if (!task) return []
     return assignments.filter((a) => a.taskId === task.id && a.status === 'overdue')
@@ -505,7 +620,8 @@ export function TaskDetailsPage() {
     isExecutorAssigned &&
     Boolean(myAssignment?.startedAt) &&
     (effectiveMyAssignmentStatus === 'in_progress' || effectiveMyAssignmentStatus === 'overdue') &&
-    !isExpired
+    !isExpired &&
+    !submittedForReviewByMe
 
   const canDevAutoSubmit =
     devMode.enabled &&
@@ -606,8 +722,21 @@ export function TaskDetailsPage() {
     if (!auth.user || auth.user.role !== 'customer') return
 
     if (USE_API) {
-      void api.post(`/contracts/${contract.id}/approve`, {}).catch(() => {})
-      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.workApproved'), tone: 'success' })
+      void (async () => {
+        try {
+          await api.post(`/contracts/${contract.id}/approve`, {})
+          await Promise.all([refreshContracts(), refreshAssignments(), refreshTasks(), refreshNotifications()])
+          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.workApproved'), tone: 'success' })
+        } catch (e) {
+          const msg =
+            e instanceof ApiError
+              ? `${e.status ?? 'ERR'} ${String(e.message)}`
+              : locale === 'ru'
+                ? 'Не удалось принять работу.'
+                : 'Failed to approve.'
+          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+        }
+      })()
       return
     }
 
@@ -642,7 +771,7 @@ export function TaskDetailsPage() {
     void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.workApproved'), tone: 'success' })
   }
 
-  const requestReviewRevision = (contractId: string, message: string) => {
+  const requestReviewRevision = async (contractId: string, message: string) => {
     const contract = contracts.find((c) => c.id === contractId) ?? null
     if (!contract) return
     if (!auth.user || auth.user.role !== 'customer') return
@@ -653,8 +782,29 @@ export function TaskDetailsPage() {
     if (used >= included) return
 
     if (USE_API) {
-      void api.post(`/contracts/${contract.id}/revision`, { message }).catch(() => {})
-      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.revisionRequested'), tone: 'info' })
+      try {
+        const id = encodeURIComponent(contract.id)
+        try {
+          await api.post(`/contracts/${id}/request-revision`, { message })
+        } catch (e) {
+          // Back-compat: older backends used /revision
+          if (e instanceof ApiError && e.status === 404) {
+            await api.post(`/contracts/${id}/revision`, { message })
+          } else {
+            throw e
+          }
+        }
+        await Promise.all([refreshContracts(), refreshAssignments(), refreshTasks(), refreshNotifications()])
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.revisionRequested'), tone: 'info' })
+      } catch (e) {
+        const msg =
+          e instanceof ApiError
+            ? `${e.status ?? 'ERR'} ${String(e.message)}`
+            : locale === 'ru'
+              ? 'Не удалось отправить на доработку.'
+              : 'Failed to request a revision.'
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+      }
       return
     }
 
@@ -690,7 +840,7 @@ export function TaskDetailsPage() {
 
     if (USE_API) {
       try {
-        await api.post(`/applications/${applicationId}/select`, {})
+        await selectApplicationApi(applicationId)
         await Promise.all([
           refreshTasks(),
           fetchApplicationsForTask(task.id).catch(() => []),
@@ -788,15 +938,7 @@ export function TaskDetailsPage() {
     if (!isPostedByMe) return
     if (USE_API) {
       try {
-        try {
-          await api.post(`/applications/${applicationId}/reject`, {})
-        } catch (e) {
-          if (e instanceof ApiError && e.status === 404) {
-            await api.patch(`/applications/${applicationId}`, { status: 'rejected' })
-          } else {
-            throw e
-          }
-        }
+        await rejectApplicationApi(applicationId)
         await Promise.all([fetchApplicationsForTask(task.id).catch(() => []), refreshNotifications()])
         void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.applicationRejected'), tone: 'info' })
       } catch (e) {
@@ -901,12 +1043,19 @@ export function TaskDetailsPage() {
         return null
       }
       const files = [
-        {
-          kind: 'upload' as const,
-          url: `idb:${uploadVideo.blobId}`,
-          title: uploadVideo.name,
-          mediaType: 'video' as const,
-        },
+        uploadVideo.kind === 'url'
+          ? ({
+              kind: 'upload' as const,
+              url: uploadVideo.url,
+              title: uploadVideo.name,
+              mediaType: 'video' as const,
+            } satisfies SubmissionFile)
+          : ({
+              kind: 'upload' as const,
+              url: `idb:${uploadVideo.blobId}`,
+              title: uploadVideo.name,
+              mediaType: 'video' as const,
+            } satisfies SubmissionFile),
       ]
       return { files, firstUrl: '', recipientUserId, taskCompletionLinks: undefined }
     }
@@ -946,18 +1095,47 @@ export function TaskDetailsPage() {
     return { files: [], firstUrl: '', recipientUserId, taskCompletionLinks: undefined }
   }
 
-  const submitCompletion = () => {
+  const submitCompletion = async () => {
     const validated = validateCompletionBeforeSubmit()
     if (!validated) return
     if (!myContract) return
-    const { files, firstUrl, recipientUserId, taskCompletionLinks } = validated
+    let { firstUrl, recipientUserId, taskCompletionLinks } = validated
+    let files = validated.files as SubmissionFile[]
     if (USE_API) {
-      void api
-        .post(`/contracts/${myContract.id}/submissions`, {
+      try {
+        // If submission contains local idb: uploads, push them to server first.
+        const nextFiles = await Promise.all(
+          files.map(async (f) => {
+            if (f.kind !== 'upload') return f
+            if (!f.url.startsWith('idb:')) return f
+            const blobId = f.url.slice('idb:'.length)
+            const blob = await getBlob(blobId)
+            if (!blob) throw new Error('upload_blob_missing')
+            const uploaded = await uploadFileToServer(blob, (f.title ?? '').trim() || 'video.mp4')
+            if (!firstUrl) firstUrl = uploaded.url
+            return { ...f, url: uploaded.url }
+          }),
+        )
+        files = nextFiles
+
+        await createSubmissionApi({
+          contractId: myContract.id,
           message: submissionMessage.trim() || undefined,
           files,
         })
-        .catch(() => {})
+        setOptimisticSubmittedForReview(true)
+        setPauseModalOpen(false)
+        await Promise.all([refreshSubmissions(), refreshContracts(), refreshAssignments(), refreshTasks(), refreshNotifications()])
+      } catch (e) {
+        const msg =
+          e instanceof ApiError
+            ? `${e.status ?? 'ERR'} ${String(e.message)}`
+            : locale === 'ru'
+              ? 'Не удалось отправить на проверку.'
+              : 'Failed to submit for review.'
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+        return
+      }
     } else {
       const submission = submissionRepo.create({
         contractId: myContract.id,
@@ -1037,8 +1215,14 @@ export function TaskDetailsPage() {
                 ) : null}
               </div>
               <StatusPill
-                tone={showCustomerWaitingStatus ? 'pending' : task.status}
-                label={showCustomerWaitingStatus ? t('task.status.waiting') : statusLabel(task.status, t)}
+                tone={pauseKindForTask ? 'paused' : showCustomerWaitingStatus ? 'pending' : task.status}
+                label={
+                  pauseKindForTask
+                    ? t(pauseKindForTask === 'paused' ? 'executor.status.paused' : 'executor.status.pauseRequested')
+                    : showCustomerWaitingStatus
+                      ? t('task.status.waiting')
+                      : statusLabel(task.status, t)
+                }
               />
             </div>
 
@@ -1107,12 +1291,36 @@ export function TaskDetailsPage() {
                       <button
                         type="button"
                         className="taskDetailsButton taskDetailsButton--primary"
-                        onClick={() => {
+                        onClick={async () => {
+                          if (!auth.user) return
                           if (USE_API) {
-                            void api.post(`/assignments/${id}/start`, {}).catch(() => {})
-                          } else {
-                            taskAssignmentRepo.startWork(id, user.id)
+                            try {
+                              await api.post(`/assignments/${myAssignment.id}/start`, {})
+                              await Promise.all([refreshAssignments(), refreshNotifications()])
+                              void notifyToTelegramAndUi({
+                                toast: toastUi,
+                                telegramUserId,
+                                text: t('toast.workStarted'),
+                                tone: 'success',
+                              })
+                            } catch (e) {
+                              const msg =
+                                e instanceof ApiError
+                                  ? `${e.status ?? 'ERR'} ${String(e.message)}`
+                                  : locale === 'ru'
+                                    ? 'Не удалось начать работу.'
+                                    : 'Failed to start work.'
+                              void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                            }
+                            return
                           }
+                          taskAssignmentRepo.startWork(id, user.id)
+                          void notifyToTelegramAndUi({
+                            toast: toastUi,
+                            telegramUserId,
+                            text: t('toast.workStarted'),
+                            tone: 'success',
+                          })
                         }}
                       >
                         {locale === 'ru' ? 'Начать работу' : 'Start work'}
@@ -1154,7 +1362,7 @@ export function TaskDetailsPage() {
                       </button>
                     </div>
                   </div>
-                ) : myAssignment.executionDeadlineAt && !fromExecutorCompleted ? (
+                ) : myAssignment.executionDeadlineAt && !fromExecutorCompleted && !submittedForReviewByMe ? (
                   <div className="taskDetailsHint" style={{ whiteSpace: 'pre-line', opacity: 0.95 }}>
                     <strong>{locale === 'ru' ? 'Таймер выполнения' : 'Execution timer'}</strong>
                     {'\n'}
@@ -1173,6 +1381,7 @@ export function TaskDetailsPage() {
             {isExecutorAssigned &&
             auth.user?.role === 'executor' &&
             myAssignment?.status === 'in_progress' &&
+            !submittedForReviewByMe &&
             !myAssignment.pauseUsed &&
             myAssignment.executionDeadlineAt &&
             timeLeftMs(myAssignment.executionDeadlineAt, nowMs) > 0 ? (
@@ -1203,6 +1412,35 @@ export function TaskDetailsPage() {
               onClose={() => setPauseModalOpen(false)}
               onSubmit={({ reasonId, durationHours, comment }) => {
                 if (!task.createdByUserId) return
+                if (USE_API) {
+                  if (!myAssignment?.id) {
+                    void notifyToTelegramAndUi({
+                      toast: toastUi,
+                      telegramUserId,
+                      text: locale === 'ru' ? 'Назначение не найдено. Обновите страницу.' : 'Assignment not found. Refresh the page.',
+                      tone: 'error',
+                    })
+                    return
+                  }
+                  void (async () => {
+                    try {
+                      await requestPauseApi({ assignmentId: myAssignment.id, reasonId, durationHours, comment })
+                      await Promise.all([refreshAssignments(), refreshNotifications(), refreshTasks()])
+                      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseRequested'), tone: 'success' })
+                      setPauseModalOpen(false)
+                    } catch (e) {
+                      const msg =
+                        e instanceof ApiError
+                          ? `${e.status ?? 'ERR'} ${String(e.message)}`
+                          : locale === 'ru'
+                            ? 'Не удалось запросить паузу.'
+                            : 'Failed to request pause.'
+                      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                    }
+                  })()
+                  return
+                }
+
                 taskAssignmentRepo.requestPause({
                   taskId: id,
                   executorId: user.id,
@@ -1505,24 +1743,68 @@ export function TaskDetailsPage() {
                               onChange={(e) => {
                                 const file = e.target.files?.[0] ?? null
                                 if (!file) return
+                                const maxBytes = MAX_UPLOAD_VIDEO_MB * 1024 * 1024
+                                if (file.size > maxBytes) {
+                                  setCompletionError(
+                                    locale === 'ru'
+                                      ? `Файл слишком большой (максимум ${MAX_UPLOAD_VIDEO_MB} МБ).`
+                                      : `File is too large (max ${MAX_UPLOAD_VIDEO_MB} MB).`,
+                                  )
+                                  e.currentTarget.value = ''
+                                  return
+                                }
                                 const mime = (file.type ?? '').trim()
                                 if (!mime.startsWith('video/')) {
                                   setCompletionError(t('task.completionUpload.invalid'))
                                   e.currentTarget.value = ''
                                   return
                                 }
+                                e.currentTarget.value = ''
+                                if (USE_API) {
+                                  setUploadVideoBusy(true)
+                                  void (async () => {
+                                    try {
+                                      const uploaded = await uploadFileToServer(file, file.name || 'video.mp4')
+                                      setUploadVideo({ kind: 'url', url: uploaded.url, name: file.name || 'video', mimeType: mime })
+                                      setCompletionError(null)
+                                    } catch (err) {
+                                      const code = err instanceof Error ? err.message : 'upload_failed'
+                                      const msg =
+                                        code === 'payload_too_large'
+                                          ? locale === 'ru'
+                                            ? 'Файл слишком большой для сервера (HTTP 413). Нужно увеличить лимит загрузки в nginx (client_max_body_size).'
+                                            : 'File is too large for the server (HTTP 413). Increase nginx upload limit (client_max_body_size).'
+                                          : locale === 'ru'
+                                            ? `Не удалось загрузить видео: ${code}`
+                                            : `Failed to upload video: ${code}`
+                                      setCompletionError(msg)
+                                      setUploadVideo(null)
+                                    } finally {
+                                      setUploadVideoBusy(false)
+                                    }
+                                  })()
+                                  return
+                                }
+
                                 const blobId = createId('blob')
                                 void putBlob(blobId, file).then(() => {
-                                  setUploadVideo({ blobId, name: file.name || 'video', mimeType: mime })
+                                  setUploadVideo({ kind: 'idb', blobId, name: file.name || 'video', mimeType: mime })
                                   setCompletionError(null)
                                 })
                               }}
                             />
-                            {uploadVideo ? (
+                            {uploadVideoBusy ? (
+                              <div style={{ marginTop: 8, opacity: 0.85 }}>{locale === 'ru' ? 'Загрузка…' : 'Uploading…'}</div>
+                            ) : uploadVideo ? (
                               <div style={{ marginTop: 8, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span style={{ opacity: 0.9 }}>
                                   {locale === 'ru' ? 'Файл:' : 'File:'} <strong>{uploadVideo.name}</strong>
                                 </span>
+                                {uploadVideo.kind === 'url' ? (
+                                  <a className="linkBtn" href={uploadVideo.url} target="_blank" rel="noreferrer">
+                                    {locale === 'ru' ? 'Открыть' : 'Open'}
+                                  </a>
+                                ) : null}
                                 <button
                                   type="button"
                                   className="taskDetailsButton"
@@ -1678,7 +1960,39 @@ export function TaskDetailsPage() {
                               <button
                                 type="button"
                                 className="taskDetailsApplication__actionButton taskDetailsApplication__actionButton--primary"
+                                disabled={isPauseDecisionBusy(a.id) || isPauseDecisionDone(a.id) || a.status !== 'pause_requested'}
                                 onClick={() => {
+                                  if (isPauseDecisionBusy(a.id) || isPauseDecisionDone(a.id) || a.status !== 'pause_requested') return
+                                  // Prevent repeated decisions even if backend is idempotent or refresh lags.
+                                  markPauseDecisionDone(a.id, true)
+                                  markPauseDecisionBusy(a.id, true)
+                                  if (USE_API) {
+                                    void (async () => {
+                                      try {
+                                        await acceptPauseApi(a.id)
+                                        await Promise.all([refreshAssignments(), refreshNotifications(), refreshTasks()])
+                                        void notifyToTelegramAndUi({
+                                          toast: toastUi,
+                                          telegramUserId,
+                                          text: t('toast.pauseAccepted'),
+                                          tone: 'success',
+                                        })
+                                      } catch (e) {
+                                        // Rollback so user can retry.
+                                        markPauseDecisionDone(a.id, false)
+                                        const msg =
+                                          e instanceof ApiError
+                                            ? `${e.status ?? 'ERR'} ${String(e.message)}`
+                                            : locale === 'ru'
+                                              ? 'Не удалось принять паузу.'
+                                              : 'Failed to accept pause.'
+                                        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                                      } finally {
+                                        markPauseDecisionBusy(a.id, false)
+                                      }
+                                    })()
+                                    return
+                                  }
                                   taskAssignmentRepo.acceptPause(task.id, a.executorId)
                                   notificationRepo.addTaskPauseAccepted({
                                     recipientUserId: a.executorId,
@@ -1686,6 +2000,7 @@ export function TaskDetailsPage() {
                                     taskId: task.id,
                                   })
                                   void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseAccepted'), tone: 'success' })
+                                  markPauseDecisionBusy(a.id, false)
                                 }}
                               >
                                 {locale === 'ru' ? 'Принять паузу' : 'Accept pause'}
@@ -1693,7 +2008,39 @@ export function TaskDetailsPage() {
                               <button
                                 type="button"
                                 className="taskDetailsApplication__actionButton"
+                                disabled={isPauseDecisionBusy(a.id) || isPauseDecisionDone(a.id) || a.status !== 'pause_requested'}
                                 onClick={() => {
+                                  if (isPauseDecisionBusy(a.id) || isPauseDecisionDone(a.id) || a.status !== 'pause_requested') return
+                                  // Prevent repeated decisions even if backend is idempotent or refresh lags.
+                                  markPauseDecisionDone(a.id, true)
+                                  markPauseDecisionBusy(a.id, true)
+                                  if (USE_API) {
+                                    void (async () => {
+                                      try {
+                                        await rejectPauseApi(a.id)
+                                        await Promise.all([refreshAssignments(), refreshNotifications(), refreshTasks()])
+                                        void notifyToTelegramAndUi({
+                                          toast: toastUi,
+                                          telegramUserId,
+                                          text: t('toast.pauseRejected'),
+                                          tone: 'info',
+                                        })
+                                      } catch (e) {
+                                        // Rollback so user can retry.
+                                        markPauseDecisionDone(a.id, false)
+                                        const msg =
+                                          e instanceof ApiError
+                                            ? `${e.status ?? 'ERR'} ${String(e.message)}`
+                                            : locale === 'ru'
+                                              ? 'Не удалось отклонить паузу.'
+                                              : 'Failed to reject pause.'
+                                        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                                      } finally {
+                                        markPauseDecisionBusy(a.id, false)
+                                      }
+                                    })()
+                                    return
+                                  }
                                   taskAssignmentRepo.rejectPause(task.id, a.executorId)
                                   notificationRepo.addTaskPauseRejected({
                                     recipientUserId: a.executorId,
@@ -1701,6 +2048,7 @@ export function TaskDetailsPage() {
                                     taskId: task.id,
                                   })
                                   void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseRejected'), tone: 'info' })
+                                  markPauseDecisionBusy(a.id, false)
                                 }}
                               >
                                 {locale === 'ru' ? 'Отклонить' : 'Reject'}
@@ -1714,6 +2062,36 @@ export function TaskDetailsPage() {
                                       ? 'Сменить исполнителя? Текущее назначение будет отменено.'
                                       : 'Switch executor? Current assignment will be cancelled.'
                                   if (!confirm(msg)) return
+                                  if (USE_API) {
+                                    void (async () => {
+                                      try {
+                                        await switchExecutorApi(a.id)
+                                        await Promise.all([
+                                          refreshAssignments(),
+                                          refreshTasks(),
+                                          refreshContracts(),
+                                          refreshApplications(),
+                                          refreshNotifications(),
+                                        ])
+                                        void notifyToTelegramAndUi({
+                                          toast: toastUi,
+                                          telegramUserId,
+                                          text: locale === 'ru' ? 'Исполнитель снят с задания.' : 'Executor removed from the task.',
+                                          tone: 'success',
+                                        })
+                                      } catch (e) {
+                                        const msg =
+                                          e instanceof ApiError
+                                            ? `${e.status ?? 'ERR'} ${String(e.message)}`
+                                            : locale === 'ru'
+                                              ? 'Не удалось сменить исполнителя.'
+                                              : 'Failed to switch executor.'
+                                        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                                      }
+                                    })()
+                                    return
+                                  }
+
                                   taskAssignmentRepo.cancelByCustomer(task.id, a.executorId)
                                   const contract = contractRepo.getForTaskExecutor(task.id, a.executorId)
                                   if (contract) contractRepo.setStatus(contract.id, 'cancelled')
@@ -1823,6 +2201,48 @@ export function TaskDetailsPage() {
                           tone: 'error',
                         })
                         navigate(paths.login)
+                      } else if (e instanceof ApiError && e.status === 403) {
+                        const code =
+                          e.payload && typeof e.payload === 'object' && 'error' in e.payload ? (e.payload as any).error : null
+                        if (code === 'executor_banned') {
+                          void notifyToTelegramAndUi({
+                            toast: toastUi,
+                            telegramUserId,
+                            text:
+                              locale === 'ru'
+                                ? 'Ваш аккаунт заблокирован. Отклики недоступны.'
+                                : 'Your account is banned. You cannot apply.',
+                            tone: 'error',
+                          })
+                        } else if (
+                          code === 'respond_blocked' &&
+                          e.payload &&
+                          typeof e.payload === 'object' &&
+                          typeof (e.payload as any).until === 'string'
+                        ) {
+                          const untilIso = String((e.payload as any).until)
+                          const left = timeLeftMs(untilIso, Date.now())
+                          const untilLabel =
+                            Number.isFinite(Date.parse(untilIso)) && untilIso.trim()
+                              ? new Date(untilIso).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')
+                              : untilIso
+                          void notifyToTelegramAndUi({
+                            toast: toastUi,
+                            telegramUserId,
+                            text:
+                              locale === 'ru'
+                                ? `Отклики заблокированы до ${untilLabel}. Осталось: ${formatTimeLeft(left, locale)}`
+                                : `Applications are blocked until ${untilLabel}. Time left: ${formatTimeLeft(left, locale)}`,
+                            tone: 'error',
+                          })
+                        } else {
+                          void notifyToTelegramAndUi({
+                            toast: toastUi,
+                            telegramUserId,
+                            text: locale === 'ru' ? 'Отклик запрещён сервером.' : 'Applying is forbidden by server.',
+                            tone: 'error',
+                          })
+                        }
                       } else {
                         void notifyToTelegramAndUi({
                           toast: toastUi,
@@ -1882,7 +2302,12 @@ export function TaskDetailsPage() {
                       : null
                   const submittedAt = submission?.createdAt ?? contract?.updatedAt ?? contract?.createdAt ?? null
                   const externalFiles = submission?.files.filter((f) => f.kind === 'external_url' || f.kind === 'upload') ?? []
-                  const started = Boolean(contract && taskAssignmentRepo.getForTaskExecutor(contract.taskId, contract.executorId)?.startedAt)
+                  const started = Boolean(
+                    contract &&
+                      (USE_API
+                        ? assignment?.startedAt
+                        : taskAssignmentRepo.getForTaskExecutor(contract.taskId, contract.executorId)?.startedAt),
+                  )
                   const revisionIncluded = contract?.revisionIncluded ?? 0
                   const revisionUsed = contract?.revisionUsed ?? 0
                   const revisionRemaining = Math.max(0, revisionIncluded - revisionUsed)
@@ -1894,15 +2319,19 @@ export function TaskDetailsPage() {
                     app.status === 'selected'
                       ? isCompletedContract
                         ? 'task.status.closed'
-                        : contract?.status === 'submitted' || contract?.status === 'disputed'
-                          ? 'task.status.review'
-                          : assignment?.status === 'overdue'
-                            ? ('executor.status.overdue' as const)
-                            : assignment?.status === 'paused'
+                        : assignment?.status === 'overdue'
+                          ? ('executor.status.overdue' as const)
+                          : assignment?.status === 'paused'
                             ? 'executor.status.paused'
-                            : assignment?.startedAt
-                            ? 'executor.status.inWork'
-                            : 'executor.status.approved'
+                            : assignment?.status === 'pause_requested'
+                              ? 'executor.status.pauseRequested'
+                              : contract?.status === 'revision_requested'
+                                ? 'task.status.revisionRequested'
+                                : contract?.status === 'submitted' || contract?.status === 'disputed'
+                                  ? 'task.status.review'
+                                  : assignment?.startedAt
+                                    ? 'executor.status.inWork'
+                                    : 'executor.status.approved'
                       : app.status === 'rejected'
                         ? 'task.status.closed'
                         : 'task.status.open'
@@ -1912,15 +2341,17 @@ export function TaskDetailsPage() {
                       : app.status === 'selected'
                         ? isCompletedContract
                           ? 'closed'
-                          : contract?.status === 'submitted' || contract?.status === 'disputed'
-                            ? 'review'
-                            : assignment?.status === 'overdue'
-                              ? 'overdue'
-                              : assignment?.status === 'paused'
+                          : assignment?.status === 'overdue'
+                            ? 'overdue'
+                            : assignment?.status === 'paused' || assignment?.status === 'pause_requested'
                               ? 'paused'
-                              : assignment?.startedAt
-                                ? 'in_progress'
-                                : 'open'
+                              : contract?.status === 'revision_requested'
+                                ? 'pending'
+                                : contract?.status === 'submitted' || contract?.status === 'disputed'
+                                  ? 'review'
+                                  : assignment?.startedAt
+                                    ? 'in_progress'
+                                    : 'open'
                         : 'open'
                   return (
                     <div
@@ -2055,7 +2486,9 @@ export function TaskDetailsPage() {
                                   className="taskDetailsApplication__actionButton taskDetailsApplication__actionButton--danger"
                                   onClick={() => {
                                     if (contract.status === 'disputed') {
-                                      const existing = disputeRepo.getForContract(contract.id)
+                                    const existing = USE_API
+                                      ? disputes.find((d) => d.contractId === contract.id) ?? null
+                                      : disputeRepo.getForContract(contract.id)
                                       if (existing) {
                                         navigate(disputeThreadPath(existing.id))
                                       } else {
@@ -2067,6 +2500,28 @@ export function TaskDetailsPage() {
                                               : 'The dispute is already open, but it was not found.',
                                         })
                                       }
+                                      return
+                                    }
+                                    if (USE_API) {
+                                      void (async () => {
+                                        try {
+                                          const created = await api.post<any>(`/disputes`, {
+                                            contractId: contract.id,
+                                            reason: { categoryId: 'universal', reasonId: 'other' },
+                                          })
+                                          await Promise.all([refreshDisputes(), refreshContracts(), refreshAssignments(), refreshTasks(), refreshNotifications()])
+                                          const id = typeof created?.id === 'string' ? created.id : (disputes.find((d) => d.contractId === contract.id)?.id ?? null)
+                                          if (id) navigate(disputeThreadPath(id))
+                                        } catch (e) {
+                                          const msg =
+                                            e instanceof ApiError
+                                              ? `${e.status ?? 'ERR'} ${String(e.message)}`
+                                              : locale === 'ru'
+                                                ? 'Не удалось открыть спор.'
+                                                : 'Failed to open dispute.'
+                                          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                                        }
+                                      })()
                                       return
                                     }
                                     const dispute = disputeRepo.open({
@@ -2175,7 +2630,18 @@ export function TaskDetailsPage() {
                                           const name = (f.title ?? '').trim() || 'video'
                                           void (async () => {
                                             const blob = await getBlob(blobId)
-                                            if (!blob) return
+                                            if (!blob) {
+                                              void notifyToTelegramAndUi({
+                                                toast: toastUi,
+                                                telegramUserId,
+                                                text:
+                                                  locale === 'ru'
+                                                    ? 'Этот файл доступен только на устройстве исполнителя (локальная загрузка). Для продакшена нужен серверный upload.'
+                                                    : 'This file is only available on the executor device (local upload). Production needs a server upload endpoint.',
+                                                tone: 'error',
+                                              })
+                                              return
+                                            }
                                             downloadBlob(name, blob)
                                           })()
                                         }}
@@ -2397,7 +2863,8 @@ export function TaskDetailsPage() {
         onClose={() => setRateCustomerOpen(false)}
         onSubmit={({ rating, comment }) => {
           if (!auth.user || auth.user.role !== 'executor') return
-          if (!task?.createdByUserId) return
+          const toUserId = task?.createdByUserId
+          if (!toUserId) return
           if (!myContract) return
           if (!canRateCustomerNow) {
             const msg =
@@ -2407,10 +2874,36 @@ export function TaskDetailsPage() {
             alert(msg)
             return
           }
+          if (USE_API) {
+            void (async () => {
+              try {
+                await createRatingApi({ contractId: myContract.id, toUserId, rating, comment })
+                await Promise.all([refreshRatings(), refreshNotifications()])
+                void notifyToTelegramAndUi({
+                  toast: toastUi,
+                  telegramUserId,
+                  text: locale === 'ru' ? 'Оценка отправлена.' : 'Rating submitted.',
+                  tone: 'success',
+                })
+              } catch (e) {
+                const msg =
+                  e instanceof ApiError
+                    ? `${e.status ?? 'ERR'} ${String(e.message)}`
+                    : locale === 'ru'
+                      ? 'Не удалось отправить оценку.'
+                      : 'Failed to submit rating.'
+                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                return
+              } finally {
+                setRateCustomerOpen(false)
+              }
+            })()
+            return
+          }
           ratingRepo.upsert({
             contractId: myContract.id,
             fromUserId: auth.user.id,
-            toUserId: task.createdByUserId,
+            toUserId,
             rating,
             comment,
           })
@@ -2529,6 +3022,29 @@ export function TaskDetailsPage() {
                     return
                   }
 
+                  if (USE_API) {
+                    void (async () => {
+                      try {
+                        const created = await api.post<any>(`/disputes`, {
+                          contractId: contract.id,
+                          reason: { categoryId: 'quality', reasonId: 'miss_deadline' },
+                        })
+                        await Promise.all([refreshDisputes(), refreshContracts(), refreshAssignments(), refreshTasks(), refreshNotifications()])
+                        const id = typeof created?.id === 'string' ? created.id : (disputes.find((d) => d.contractId === contract.id)?.id ?? null)
+                        if (id) navigate(disputeThreadPath(id))
+                      } catch (e) {
+                        const msg =
+                          e instanceof ApiError
+                            ? `${e.status ?? 'ERR'} ${String(e.message)}`
+                            : locale === 'ru'
+                              ? 'Не удалось открыть спор.'
+                              : 'Failed to open dispute.'
+                        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                      }
+                    })()
+                    return
+                  }
+
                   disputeRepo.open({
                     contractId: contract.id,
                     openedByUserId: user.id,
@@ -2584,14 +3100,14 @@ export function TaskDetailsPage() {
       <RevisionRequestModal
         open={Boolean(reviewRevisionModalContractId)}
         executorName={(() => {
-          const c = reviewRevisionModalContractId ? contractRepo.getById(reviewRevisionModalContractId) : null
+          const c = reviewRevisionModalContractId ? contracts.find((x) => x.id === reviewRevisionModalContractId) ?? null : null
           const u = c ? users.find((x) => x.id === c.executorId) ?? null : null
           return u?.fullName
         })()}
         onClose={() => setReviewRevisionModalContractId(null)}
         onSubmit={(message) => {
           if (!reviewRevisionModalContractId) return
-          requestReviewRevision(reviewRevisionModalContractId, message)
+          void requestReviewRevision(reviewRevisionModalContractId, message)
           setReviewRevisionModalContractId(null)
         }}
       />

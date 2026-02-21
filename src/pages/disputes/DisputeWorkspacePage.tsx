@@ -4,7 +4,7 @@ import { paths, taskDetailsPath, userProfilePath } from '@/app/router/paths'
 import { useAuth } from '@/shared/auth/AuthContext'
 import { useI18n } from '@/shared/i18n/I18nContext'
 import { disputeRepo } from '@/entities/dispute/lib/disputeRepo'
-import { useDisputes } from '@/entities/dispute/lib/useDisputes'
+import { refreshDisputes, useDisputes } from '@/entities/dispute/lib/useDisputes'
 import { useContracts } from '@/entities/contract/lib/useContracts'
 import { useTasks } from '@/entities/task/lib/useTasks'
 import { pickText } from '@/entities/task/lib/taskText'
@@ -12,7 +12,7 @@ import { useUsers } from '@/entities/user/lib/useUsers'
 import { useSubmissions } from '@/entities/submission/lib/useSubmissions'
 import { VideoEmbed } from '@/shared/ui/VideoEmbed'
 import { balanceFreezeRepo } from '@/entities/user/lib/balanceFreezeRepo'
-import { useDisputeMessages } from '@/entities/disputeMessage/lib/useDisputeMessages'
+import { postDisputeMessage, refreshDisputeMessages, useDisputeMessages } from '@/entities/disputeMessage/lib/useDisputeMessages'
 import { disputeMessageRepo } from '@/entities/disputeMessage/lib/disputeMessageRepo'
 import { useAuditLog } from '@/entities/auditLog/lib/useAuditLog'
 import { auditLogRepo } from '@/entities/auditLog/lib/auditLogRepo'
@@ -21,8 +21,15 @@ import { disputeArbitrationService } from '@/shared/services/disputeArbitrationS
 import { CustomSelect } from '@/shared/ui/custom-select/CustomSelect'
 import { getBlob } from '@/shared/lib/blobStore'
 import './dispute-workspace.css'
+import { ApiError, api } from '@/shared/api/api'
+import { refreshNotifications } from '@/entities/notification/lib/useNotifications'
+import { refreshContracts } from '@/entities/contract/lib/useContracts'
+import { refreshAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
+import { refreshTasks } from '@/entities/task/lib/useTasks'
+import { serverBalanceRepo } from '@/entities/user/lib/serverBalanceRepo'
 
 const DEV_ARBITER_USER_ID = 'user_dev_arbiter'
+const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
 type DecisionKind = 'release_to_executor' | 'refund_to_customer' | 'partial_refund'
 
@@ -61,6 +68,8 @@ function arbiterActionErrorText(message: string, locale: 'ru' | 'en') {
     'Escrow is not frozen (cannot split)': 'Escrow не заморожен — нельзя распределить частично.',
     'Partial amounts must sum to escrow amount': 'Суммы частичного решения должны в сумме равняться escrow.',
     'Failed to lock decision (possibly stale)': 'Не удалось зафиксировать решение (возможно, данные устарели). Обновите страницу и попробуйте ещё раз.',
+    version_mismatch: 'Данные устарели (конфликт обновления). Обновите страницу и попробуйте ещё раз.',
+    request_failed_409: 'Данные устарели (конфликт обновления). Обновите страницу и попробуйте ещё раз.',
   }
   return map[message] ?? message
 }
@@ -108,18 +117,28 @@ export function DisputeWorkspacePage() {
   const auth = useAuth()
   const { locale } = useI18n()
   const navigate = useNavigate()
-  const user = auth.user!
   const chatListRef = useRef<HTMLDivElement | null>(null)
   const didInitialChatScrollRef = useRef(false)
 
-  // subscribe so workspace updates reactively
-  useDisputes()
+  const disputes = useDisputes()
   const contracts = useContracts()
   const tasks = useTasks()
   const users = useUsers()
   const submissions = useSubmissions()
 
-  const dispute = disputeId ? disputeRepo.getById(disputeId) : null
+  // Keep page resilient even if auth/user is temporarily null.
+  const user = auth.user
+  if (!user) {
+    return (
+      <main className="disputeWsPage">
+        <div className="disputeWsContainer">
+          <h1 className="disputeWsTitle">{locale === 'ru' ? 'Загрузка…' : 'Loading…'}</h1>
+        </div>
+      </main>
+    )
+  }
+
+  const dispute = disputeId ? disputes.find((d) => d.id === disputeId) ?? null : null
   const contract = useMemo(
     () => (dispute ? contracts.find((c) => c.id === dispute.contractId) ?? null : null),
     [contracts, dispute],
@@ -130,9 +149,17 @@ export function DisputeWorkspacePage() {
   )
 
   const participants = useMemo(() => {
-    if (!contract) return { customerId: null as string | null, executorId: null as string | null, arbiterId: DEV_ARBITER_USER_ID }
-    return { customerId: contract.clientId, executorId: contract.executorId, arbiterId: DEV_ARBITER_USER_ID }
-  }, [contract])
+    const d = dispute as any
+    const customerId =
+      (typeof d?.customerId === 'string' && d.customerId.trim() ? d.customerId.trim() : null) ??
+      (contract?.clientId ? String(contract.clientId) : null)
+    const executorId =
+      (typeof d?.executorId === 'string' && d.executorId.trim() ? d.executorId.trim() : null) ??
+      (contract?.executorId ? String(contract.executorId) : null)
+    const arbiterId =
+      typeof d?.assignedArbiterId === 'string' && d.assignedArbiterId.trim() ? d.assignedArbiterId.trim() : DEV_ARBITER_USER_ID
+    return { customerId, executorId, arbiterId }
+  }, [contract, dispute])
 
   const isArbiter = Boolean(user.role === 'arbiter' && user.id === participants.arbiterId)
   const allowed = Boolean(dispute && contract && isArbiter)
@@ -143,9 +170,76 @@ export function DisputeWorkspacePage() {
   const audit = useAuditLog(dispute?.id ?? null)
   const messages = useDisputeMessages(dispute?.id ?? null)
 
+  const takeInWorkApi = async (expectedVersion?: number) => {
+    if (!dispute) return
+    await api.post(`/disputes/${encodeURIComponent(dispute.id)}/take-in-work`, {
+      ...(typeof expectedVersion === 'number' ? { expectedVersion } : null),
+    })
+    await Promise.all([refreshDisputes(), refreshNotifications()])
+  }
+
+  const requestMoreInfoApi = async (expectedVersion?: number) => {
+    if (!dispute) return
+    await api.post(`/disputes/${encodeURIComponent(dispute.id)}/request-more-info`, {
+      ...(typeof expectedVersion === 'number' ? { expectedVersion } : null),
+    })
+    await Promise.all([refreshDisputes(), refreshNotifications()])
+  }
+
+  const closeDisputeApi = async () => {
+    if (!dispute) return
+    await api.post(`/disputes/${encodeURIComponent(dispute.id)}/close`, {})
+    await Promise.all([refreshDisputes(), refreshNotifications()])
+  }
+
+  const actionErrorText = (e: unknown) => {
+    if (e instanceof ApiError) {
+      if (e.status === 409) {
+        return locale === 'ru'
+          ? 'Данные устарели (конфликт обновления). Обновите страницу и попробуйте ещё раз.'
+          : 'Stale data (version mismatch). Refresh the page and try again.'
+      }
+      if (e.status === 401) {
+        return locale === 'ru' ? 'Сессия истекла. Войдите заново.' : 'Session expired. Please sign in again.'
+      }
+      if (e.status === 403) {
+        return locale === 'ru' ? 'Нет прав на это действие.' : 'You are not allowed to perform this action.'
+      }
+      return `${e.status ?? 'ERR'} ${e.message}`
+    }
+    return e instanceof Error ? e.message : locale === 'ru' ? 'Неизвестная ошибка.' : 'Unknown error.'
+  }
+
+  const decideApi = async (input: { expectedVersion?: number; decision: any }) => {
+    if (!dispute) return
+    const body = {
+      ...(typeof input.expectedVersion === 'number' ? { expectedVersion: input.expectedVersion } : null),
+      decision: input.decision,
+    }
+    try {
+      await api.post(`/disputes/${encodeURIComponent(dispute.id)}/decision`, body)
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) {
+        // Back-compat: older route name.
+        await api.post(`/disputes/${encodeURIComponent(dispute.id)}/decide`, body)
+      } else {
+        throw e
+      }
+    }
+    await Promise.all([
+      refreshDisputes(),
+      refreshContracts(),
+      refreshAssignments(),
+      refreshTasks(),
+      refreshNotifications(),
+      serverBalanceRepo.refresh().catch(() => {}),
+    ])
+  }
+
   useEffect(() => {
     // New dispute opened -> allow initial scroll again.
     didInitialChatScrollRef.current = false
+    setActionError(null)
   }, [dispute?.id])
 
   useEffect(() => {
@@ -184,7 +278,22 @@ export function DisputeWorkspacePage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmVersion, setConfirmVersion] = useState<number | null>(null)
   const [confirmError, setConfirmError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [arbiterDraft, setArbiterDraft] = useState('')
+
+  // Avoid showing "not found" before the first API fetch completes.
+  if (USE_API && disputeId && disputes.length === 0) {
+    return (
+      <main className="disputeWsPage">
+        <div className="disputeWsContainer">
+          <h1 className="disputeWsTitle">{locale === 'ru' ? 'Загрузка спора…' : 'Loading dispute…'}</h1>
+          <div style={{ opacity: 0.85, marginTop: 8 }}>
+            <Link to={paths.disputes}>{locale === 'ru' ? 'К очереди' : 'Back to inbox'}</Link>
+          </div>
+        </div>
+      </main>
+    )
+  }
 
   if (!dispute || !contract) {
     return (
@@ -469,6 +578,15 @@ export function DisputeWorkspacePage() {
                       if (!canChatActions) return
                       const text = arbiterDraft.trim()
                       if (!text) return
+                      if (USE_API) {
+                        void postDisputeMessage({ disputeId: dispute.id, text, kind: 'public' })
+                          .then(async () => {
+                            setArbiterDraft('')
+                            await Promise.all([refreshDisputeMessages(dispute.id), refreshNotifications(), refreshDisputes()])
+                          })
+                          .catch(() => {})
+                        return
+                      }
                       const msg = disputeMessageRepo.add({
                         disputeId: dispute.id,
                         authorUserId: auth.user!.id,
@@ -574,10 +692,16 @@ export function DisputeWorkspacePage() {
                     disabled={!canChatActions}
                     onClick={() => {
                       if (!canChatActions) return
-                      const msg = disputeMessageRepo.addSystem({
-                        disputeId: dispute.id,
-                        text: locale === 'ru' ? 'Пришлите исходники (если есть).' : 'Please provide source files (if available).',
-                      })
+                      const txt = locale === 'ru' ? 'Пришлите исходники (если есть).' : 'Please provide source files (if available).'
+                      if (USE_API) {
+                        void postDisputeMessage({ disputeId: dispute.id, text: txt, kind: 'system' })
+                          .then(async () => {
+                            await Promise.all([refreshDisputeMessages(dispute.id), refreshNotifications(), refreshDisputes()])
+                          })
+                          .catch(() => {})
+                        return
+                      }
+                      const msg = disputeMessageRepo.addSystem({ disputeId: dispute.id, text: txt })
                       for (const uid of [participants.customerId, participants.executorId].filter(Boolean) as string[]) {
                         notificationRepo.addDisputeMessage({
                           recipientUserId: uid,
@@ -604,10 +728,16 @@ export function DisputeWorkspacePage() {
                     disabled={!canChatActions}
                     onClick={() => {
                       if (!canChatActions) return
-                      const msg = disputeMessageRepo.addSystem({
-                        disputeId: dispute.id,
-                        text: locale === 'ru' ? 'Уточните пункт ТЗ, на который вы ссылаетесь.' : 'Please clarify which requirement item you refer to.',
-                      })
+                      const txt = locale === 'ru' ? 'Уточните пункт ТЗ, на который вы ссылаетесь.' : 'Please clarify which requirement item you refer to.'
+                      if (USE_API) {
+                        void postDisputeMessage({ disputeId: dispute.id, text: txt, kind: 'system' })
+                          .then(async () => {
+                            await Promise.all([refreshDisputeMessages(dispute.id), refreshNotifications(), refreshDisputes()])
+                          })
+                          .catch(() => {})
+                        return
+                      }
+                      const msg = disputeMessageRepo.addSystem({ disputeId: dispute.id, text: txt })
                       for (const uid of [participants.customerId, participants.executorId].filter(Boolean) as string[]) {
                         notificationRepo.addDisputeMessage({
                           recipientUserId: uid,
@@ -658,6 +788,17 @@ export function DisputeWorkspacePage() {
                     disabled={!canDecide || (!!dispute.assignedArbiterId && !isTakenByMe)}
                     onClick={() => {
                       const before = dispute.version ?? 1
+                      if (USE_API) {
+                        void (async () => {
+                          try {
+                            setActionError(null)
+                            await takeInWorkApi(before)
+                          } catch (e) {
+                            setActionError(actionErrorText(e))
+                          }
+                        })()
+                        return
+                      }
                       const next = disputeRepo.takeInWork({ disputeId: dispute.id, arbiterId: auth.user!.id, expectedVersion: before })
                       if (!next) return
                       disputeMessageRepo.addSystem({
@@ -684,6 +825,17 @@ export function DisputeWorkspacePage() {
                     disabled={!canDecide || (!!dispute.assignedArbiterId && !isTakenByMe)}
                     onClick={() => {
                       const before = dispute.version ?? 1
+                      if (USE_API) {
+                        void (async () => {
+                          try {
+                            setActionError(null)
+                            await takeInWorkApi(before)
+                          } catch (e) {
+                            setActionError(actionErrorText(e))
+                          }
+                        })()
+                        return
+                      }
                       const next = disputeRepo.takeInWork({ disputeId: dispute.id, arbiterId: auth.user!.id, expectedVersion: before })
                       if (!next) return
                       disputeMessageRepo.addSystem({
@@ -711,6 +863,17 @@ export function DisputeWorkspacePage() {
                   onClick={() => {
                     if (!isTakenByMe) return
                     const before = dispute.version ?? 1
+                    if (USE_API) {
+                      void (async () => {
+                        try {
+                          setActionError(null)
+                          await requestMoreInfoApi(before)
+                        } catch (e) {
+                          setActionError(actionErrorText(e))
+                        }
+                      })()
+                      return
+                    }
                     const next = disputeRepo.requestMoreInfo({ disputeId: dispute.id, arbiterId: auth.user!.id, expectedVersion: before })
                     if (!next) return
                     disputeMessageRepo.addSystem({ disputeId: dispute.id, text: locale === 'ru' ? 'Арбитр запросил дополнительную информацию.' : 'Arbiter requested more information.' })
@@ -728,6 +891,8 @@ export function DisputeWorkspacePage() {
                   {locale === 'ru' ? 'Запросить инфо' : 'Request info'}
                 </button>
               </div>
+
+              {actionError ? <div className="disputeWsError" style={{ marginTop: 10 }}>{actionError}</div> : null}
 
               <div className="disputeWsDivider" />
 
@@ -794,6 +959,17 @@ export function DisputeWorkspacePage() {
                   disabled={!canClose || !isTakenByMe}
                   onClick={() => {
                     if (!isTakenByMe) return
+                    if (USE_API) {
+                      void (async () => {
+                        try {
+                          setActionError(null)
+                          await closeDisputeApi()
+                        } catch (e) {
+                          setActionError(actionErrorText(e))
+                        }
+                      })()
+                      return
+                    }
                     const closed = disputeRepo.close(contract.id)
                     if (!closed) return
                     disputeMessageRepo.addSystem({ disputeId: dispute.id, text: locale === 'ru' ? 'Спор закрыт арбитром.' : 'Dispute closed by arbiter.' })
@@ -890,6 +1066,29 @@ export function DisputeWorkspacePage() {
                       decisionKind === 'partial_refund'
                         ? { executorAmount: Number(partialExecutorAmount), customerAmount: Number(partialCustomerAmount) }
                         : undefined
+                    if (USE_API) {
+                      const decision =
+                        decisionKind === 'release_to_executor'
+                          ? { payout: 'executor' as const }
+                          : decisionKind === 'refund_to_customer'
+                            ? { payout: 'customer' as const }
+                            : {
+                                payout: 'partial' as const,
+                                executorAmount: Number(partial?.executorAmount ?? 0),
+                                customerAmount: Number(partial?.customerAmount ?? 0),
+                                note: comment.trim() || undefined,
+                              }
+                      void decideApi({ expectedVersion, decision })
+                        .then(() => {
+                          setConfirmOpen(false)
+                          setConfirmError(null)
+                        })
+                        .catch((e) => {
+                          const message = e instanceof Error ? e.message : 'decision_failed'
+                          setConfirmError(arbiterActionErrorText(message, locale))
+                        })
+                      return
+                    }
                     disputeArbitrationService.decideAndExecute({
                       disputeId: dispute.id,
                       actorUserId: auth.user!.id,

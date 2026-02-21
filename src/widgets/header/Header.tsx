@@ -7,10 +7,16 @@ import { useUsers } from '@/entities/user/lib/useUsers'
 import './header.css'
 import { useDevMode } from '@/shared/dev/devMode'
 import { getActiveTheme, setTheme } from '@/shared/theme/theme'
-import { refreshNotifications, useNotifications } from '@/entities/notification/lib/useNotifications'
+import {
+  markAllNotificationsReadOptimistic,
+  markNotificationReadOptimistic,
+  markNotificationsReadOptimistic,
+  refreshNotifications,
+  useNotifications,
+} from '@/entities/notification/lib/useNotifications'
 import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import { useTasks } from '@/entities/task/lib/useTasks'
-import { buildNotificationVM } from '@/entities/notification/lib/notificationViewModel'
+import { buildNotificationFeedVM } from '@/entities/notification/lib/notificationViewModel'
 import { api } from '@/shared/api/api'
 
 const DEV_ARBITER_USER_ID = 'user_dev_arbiter'
@@ -190,9 +196,17 @@ export function Header() {
     const user = auth.user
     if (!user) return null
     const list = notifications
-    const unread = list.filter((n) => !n.readAt).length
+    const unreadList = list.filter((n) => !n.readAt)
+    const unread = unreadList.length
     const badgeText = unread > 99 ? '99+' : unread ? String(unread) : null
-    const preview = list.slice(0, 6)
+    const feed = buildNotificationFeedVM({
+      list: unreadList,
+      actorById: userById,
+      taskById,
+      locale,
+      t,
+    })
+    const preview = feed.slice(0, 6)
 
     return (
       <div className="notif" ref={notifRef}>
@@ -222,6 +236,7 @@ export function Header() {
                   disabled={!unread}
                   onClick={() => {
                     if (USE_API) {
+                      markAllNotificationsReadOptimistic()
                       void api.post('/notifications/read-all', {}).then(() => refreshNotifications())
                     } else {
                       notificationRepo.markAllRead(user.id)
@@ -237,28 +252,23 @@ export function Header() {
               <div className="notif__empty">{locale === 'ru' ? 'Пока нет уведомлений.' : 'No notifications yet.'}</div>
             ) : (
               <div className="notif__items">
-                {preview.map((n) => {
-                  const actor = userById.get(n.actorUserId) ?? null
-                  const task = taskById.get(n.taskId) ?? null
-                  const vm = buildNotificationVM({
-                    n,
-                    actorId: actor?.id ?? null,
-                    task,
-                    locale,
-                    t,
-                  })
+                {preview.map((vm) => {
                   const to = vm.href ?? paths.notifications
                   return (
                     <Link
-                      key={n.id}
+                      key={vm.id}
                       className={`notif__item${vm.unread ? ' notif__item--unread' : ''}`}
                       to={to}
                       role="menuitem"
                       onClick={() => {
                         if (USE_API) {
-                          void api.post(`/notifications/${n.id}/read`, {}).then(() => refreshNotifications())
+                          const ids = vm.sourceNotificationIds?.length ? vm.sourceNotificationIds : [vm.id]
+                          if (vm.sourceNotificationIds?.length) markNotificationsReadOptimistic(ids)
+                          else markNotificationReadOptimistic(vm.id)
+                          void Promise.allSettled(ids.map((id) => api.post(`/notifications/${id}/read`, {}))).then(() => refreshNotifications())
                         } else {
-                          notificationRepo.markRead(n.id)
+                          const ids = vm.sourceNotificationIds?.length ? vm.sourceNotificationIds : [vm.id]
+                          for (const id of ids) notificationRepo.markRead(id)
                         }
                         setIsNotifOpen(false)
                       }}

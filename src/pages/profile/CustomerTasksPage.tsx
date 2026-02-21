@@ -2,7 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { paths, taskDetailsPath, userProfilePath } from '@/app/router/paths'
 import { applicationRepo } from '@/entities/task/lib/applicationRepo'
-import { fetchApplicationsForTask, useApplications } from '@/entities/task/lib/useApplications'
+import {
+  fetchApplicationsForTask,
+  refreshApplications,
+  rejectApplicationApi,
+  selectApplicationApi,
+  useApplications,
+} from '@/entities/task/lib/useApplications'
 import { taskRepo, archiveExpiredTasks, archiveStaleTasks } from '@/entities/task/lib/taskRepo'
 import { refreshTasks, useTasks } from '@/entities/task/lib/useTasks'
 import { fetchUsersByIds, useUsers } from '@/entities/user/lib/useUsers'
@@ -23,12 +29,14 @@ import { noStartViolationCountLast90d } from '@/entities/executorSanction/lib/no
 import { NoStartAssignModal } from '@/features/sanctions/NoStartAssignModal'
 import { refreshAssignments, useTaskAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
 import { refreshNotifications } from '@/entities/notification/lib/useNotifications'
-import { ApiError, api } from '@/shared/api/api'
 import { useDevMode } from '@/shared/dev/devMode'
 import './profile.css'
 import { previewMetaList } from '@/shared/lib/metaList'
 import { StatusPill } from '@/shared/ui/status-pill/StatusPill'
 import { Pagination } from '@/shared/ui/pagination/Pagination'
+import { useToast } from '@/shared/ui/toast/ToastProvider'
+import { notifyToTelegramAndUi } from '@/shared/notify/notify'
+import { ApiError } from '@/shared/api/api'
 
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
@@ -55,6 +63,9 @@ export function CustomerTasksPage() {
   const { t, locale } = useI18n()
   const auth = useAuth()
   const user = auth.user!
+  const toast = useToast()
+  const telegramUserId = auth.user?.telegramUserId ?? null
+  const toastUi = (msg: string, tone?: 'success' | 'info' | 'error') => toast.showToast({ message: msg, tone })
   const devMode = useDevMode()
   const navigate = useNavigate()
   const tasks = useTasks()
@@ -215,7 +226,11 @@ export function CustomerTasksPage() {
         .slice()
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     : []
-  const activeTask = applicationsOverlayTaskId ? taskRepo.getById(applicationsOverlayTaskId) ?? null : null
+  const activeTask = applicationsOverlayTaskId
+    ? USE_API
+      ? (tasks.find((t) => t.id === applicationsOverlayTaskId) ?? null)
+      : taskRepo.getById(applicationsOverlayTaskId) ?? null
+    : null
   const activeAssignedCount = activeTask?.assignedExecutorIds.length ?? 0
   const activeMaxExecutors = activeTask?.maxExecutors ?? 1
   const activeSlotsAvailable = activeAssignedCount < activeMaxExecutors
@@ -251,24 +266,36 @@ export function CustomerTasksPage() {
     app: typeof activeTaskApplications[number],
     opts?: { bypassNoStartConfirm?: boolean },
   ) => {
-    if (!activeTask || !auth.user) return
+    if (!auth.user) return
     setInsufficientAlertTaskId(null)
 
     if (USE_API) {
       try {
-        await api.post(`/applications/${app.id}/select`, {})
+        const taskId = activeTask?.id ?? applicationsOverlayTaskId ?? app.taskId
+        if (!taskId) return
+        await selectApplicationApi(app.id)
         await Promise.all([
           refreshTasks(),
-          fetchApplicationsForTask(activeTask.id).catch(() => []),
+          refreshApplications(),
+          fetchApplicationsForTask(taskId).catch(() => []),
           refreshContracts(),
           refreshAssignments(),
           refreshNotifications(),
         ])
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.executorAssigned'), tone: 'success' })
       } catch (e) {
-        // keep UI responsive; errors are already logged by api helper
+        const msg =
+          e instanceof ApiError
+            ? `${e.status ?? 'ERR'} ${String(e.message)}`
+            : locale === 'ru'
+              ? 'Не удалось назначить исполнителя.'
+              : 'Failed to assign executor.'
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
       }
       return
     }
+
+    if (!activeTask) return
 
     const customerId = activeTask.createdByUserId
     const existingContract = contractRepo.getForTaskExecutor(activeTask.id, app.executorUserId)
@@ -337,15 +364,7 @@ export function CustomerTasksPage() {
   const handleRejectApplication = async (applicationId: string) => {
     if (USE_API) {
       try {
-        try {
-          await api.post(`/applications/${applicationId}/reject`, {})
-        } catch (e) {
-          if (e instanceof ApiError && e.status === 404) {
-            await api.patch(`/applications/${applicationId}`, { status: 'rejected' })
-          } else {
-            throw e
-          }
-        }
+        await rejectApplicationApi(applicationId)
         if (applicationsOverlayTaskId) await fetchApplicationsForTask(applicationsOverlayTaskId).catch(() => [])
         await refreshNotifications()
       } catch {
@@ -697,7 +716,11 @@ export function CustomerTasksPage() {
               <ul className="profileApplicationsList">
                 {activeTaskApplications.map((app) => {
                   const executor = users.find((u) => u.id === app.executorUserId) ?? null
-                  const contract = activeTask ? contractRepo.getForTaskExecutor(activeTask.id, app.executorUserId) : null
+                  const contract = activeTask
+                    ? USE_API
+                      ? contracts.find((c) => c.taskId === activeTask.id && c.executorId === app.executorUserId) ?? null
+                      : contractRepo.getForTaskExecutor(activeTask.id, app.executorUserId)
+                    : null
                   const assignment =
                     activeTask ? assignments.find((a) => a.taskId === activeTask.id && a.executorId === app.executorUserId) ?? null : null
                   const isCompletedContract = Boolean(contract && (contract.status === 'approved' || contract.status === 'resolved'))

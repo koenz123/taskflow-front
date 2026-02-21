@@ -3,12 +3,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { paths, taskDetailsPath, userProfilePath } from '@/app/router/paths'
 import { useAuth } from '@/shared/auth/AuthContext'
 import { useI18n } from '@/shared/i18n/I18nContext'
-import { useTasks } from '@/entities/task/lib/useTasks'
+import { refreshTasks, useTasks } from '@/entities/task/lib/useTasks'
 import { pickText } from '@/entities/task/lib/taskText'
 import { SocialLinks } from '@/shared/social/SocialLinks'
 import { useUsers } from '@/entities/user/lib/useUsers'
 import { balanceRepo } from '@/entities/user/lib/balanceRepo'
 import { useCustomerBalance } from '@/entities/user/lib/useCustomerBalance'
+import { serverBalanceRepo } from '@/entities/user/lib/serverBalanceRepo'
 import { formatTimeLeft, timeLeftMs } from '@/entities/task/lib/taskDeadline'
 import { applicationRepo } from '@/entities/task/lib/applicationRepo'
 import { taskRepo } from '@/entities/task/lib/taskRepo'
@@ -16,17 +17,23 @@ import { balanceFreezeRepo } from '@/entities/user/lib/balanceFreezeRepo'
 import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import { useNotifications } from '@/entities/notification/lib/useNotifications'
 import { contractRepo } from '@/entities/contract/lib/contractRepo'
-import { useContracts } from '@/entities/contract/lib/useContracts'
+import { refreshContracts, useContracts } from '@/entities/contract/lib/useContracts'
 import { fileToAvatarDataUrl } from '@/shared/lib/image'
-import { useApplications } from '@/entities/task/lib/useApplications'
+import {
+  fetchApplicationsForTask,
+  refreshApplications,
+  rejectApplicationApi,
+  selectApplicationApi,
+  useApplications,
+} from '@/entities/task/lib/useApplications'
 import { getUsdRubRateCachedOrFallback, refreshUsdRubRate } from '@/shared/lib/usdRubRate'
 import { timeAgo } from '@/shared/lib/timeAgo'
-import { useRatings } from '@/entities/rating/lib/useRatings'
-import { ratingRepo } from '@/entities/rating/lib/ratingRepo'
+import { createRatingApi, refreshRatings, useRatings } from '@/entities/rating/lib/useRatings'
 import { RatingModal } from '@/features/rating/RatingModal'
 import { getEffectiveRatingSummaryForUser } from '@/shared/lib/ratingSummary'
+import { ratingRepo } from '@/entities/rating/lib/ratingRepo'
 import { taskAssignmentRepo } from '@/entities/taskAssignment/lib/taskAssignmentRepo'
-import { useTaskAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
+import { refreshAssignments, useTaskAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
 import { useRatingAdjustments } from '@/entities/ratingAdjustment/lib/useRatingAdjustments'
 import { noStartViolationCountLast90d } from '@/entities/executorSanction/lib/noStartSanctions'
 import { NoStartAssignModal } from '@/features/sanctions/NoStartAssignModal'
@@ -42,7 +49,8 @@ import { disputeRepo } from '@/entities/dispute/lib/disputeRepo'
 import { disputeThreadPath } from '@/app/router/paths'
 import { HelpTip } from '@/shared/ui/help-tip/HelpTip'
 import { notifyToTelegramAndUi } from '@/shared/notify/notify'
-import { api } from '@/shared/api/api'
+import { ApiError, api } from '@/shared/api/api'
+import { refreshNotifications } from '@/entities/notification/lib/useNotifications'
 
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
@@ -115,18 +123,30 @@ export function ProfilePage() {
     return locale === 'ru' ? balance * usdRubRate : balance
   }, [balance, locale, usdRubRate])
 
-  const handleRejectApplication = (applicationId: string) => {
+  const handleRejectApplication = async (applicationId: string) => {
+    if (USE_API) {
+      try {
+        await rejectApplicationApi(applicationId)
+        await Promise.all([refreshApplications(), refreshNotifications()])
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.applicationRejected'), tone: 'info' })
+      } catch (e) {
+        const msg = e instanceof ApiError ? `${e.status ?? 'ERR'} ${String(e.message)}` : (locale === 'ru' ? 'Не удалось отклонить отклик.' : 'Failed to reject.')
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+      }
+      return
+    }
+
     applicationRepo.reject(applicationId)
     void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.applicationRejected'), tone: 'info' })
   }
 
-  const handleAssignApplication = (applicationId: string, opts?: { bypassNoStartConfirm?: boolean }) => {
+  const handleAssignApplication = async (applicationId: string, opts?: { bypassNoStartConfirm?: boolean }) => {
     if (!user || user.role !== 'customer') return
 
     const app = applications.find((x) => x.id === applicationId) ?? null
     if (!app || app.status !== 'pending') return
 
-    const task = taskRepo.getById(app.taskId)
+    const task = USE_API ? (tasks.find((t) => t.id === app.taskId) ?? null) : taskRepo.getById(app.taskId)
     if (!task) return
     if (timeLeftMs(task.expiresAt, Date.now()) <= 0) return
     if (!task.createdByUserId || task.createdByUserId !== user.id) return
@@ -140,6 +160,35 @@ export function ProfilePage() {
     const prevNoStart = noStartViolationCountLast90d(app.executorUserId)
     if (prevNoStart >= 2 && !opts?.bypassNoStartConfirm) {
       setNoStartPrompt({ applicationId, count: prevNoStart })
+      return
+    }
+
+    if (USE_API) {
+      try {
+        await selectApplicationApi(applicationId)
+        await Promise.all([
+          refreshTasks(),
+          refreshApplications(),
+          fetchApplicationsForTask(task.id).catch(() => []),
+          refreshContracts(),
+          refreshAssignments(),
+          refreshNotifications(),
+        ])
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.executorAssigned'), tone: 'success' })
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 401) {
+          void notifyToTelegramAndUi({
+            toast: toastUi,
+            telegramUserId,
+            text: locale === 'ru' ? 'Сессия истекла. Войдите снова.' : 'Session expired. Please sign in again.',
+            tone: 'error',
+          })
+          navigate(paths.login)
+        } else {
+          const msg = e instanceof ApiError ? `${e.status ?? 'ERR'} ${String(e.message)}` : (locale === 'ru' ? 'Не удалось назначить исполнителя.' : 'Failed to assign.')
+          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+        }
+      }
       return
     }
 
@@ -216,6 +265,24 @@ export function ProfilePage() {
       return
     }
     const amountUsd = locale === 'ru' ? amountUi / usdRubRate : amountUi
+    if (USE_API) {
+      void (async () => {
+        try {
+          await serverBalanceRepo.refresh()
+          const current = serverBalanceRepo.get()
+          if (current < amountUsd) {
+            setWithdrawMessage(t('profile.balance.insufficient'))
+            return
+          }
+          await serverBalanceRepo.adjust(-amountUsd, 'withdraw')
+          setWithdrawAmount('')
+          setWithdrawMessage(t('profile.balance.withdrawSuccess'))
+        } catch {
+          setWithdrawMessage(t('profile.balance.withdrawError'))
+        }
+      })()
+      return
+    }
     if (!balanceRepo.withdraw(user.id, amountUsd)) {
       setWithdrawMessage(t('profile.balance.insufficient'))
       return
@@ -875,7 +942,7 @@ export function ProfilePage() {
                                   c.taskId === task.id &&
                                   c.clientId === user.id &&
                                   (c.status === 'approved' || c.status === 'resolved') &&
-                                  !ratingRepo.getForContractPair(c.id, user.id),
+                                  !ratings.some((r) => r.contractId === c.id && r.fromUserId === user.id),
                               )
                               .map((c) => {
                                 const u = users.find((x) => x.id === c.executorId) ?? null
@@ -1170,8 +1237,8 @@ export function ProfilePage() {
                 ) : (
                   <ul className="customerTasksList" aria-label={locale === 'ru' ? 'Споры' : 'Disputes'}>
                     {disputesForProfile.map((d) => {
-                      const c = contractRepo.getById(d.contractId)
-                      const taskItem = c ? taskRepo.getById(c.taskId) : null
+                      const c = USE_API ? (contracts.find((x) => x.id === d.contractId) ?? null) : contractRepo.getById(d.contractId)
+                      const taskItem = c ? (USE_API ? (tasks.find((x) => x.id === c.taskId) ?? null) : taskRepo.getById(c.taskId)) : null
                       const title = taskItem ? pickText(taskItem.title, locale) : (c?.taskId ?? d.contractId)
                       const openedBy = users.find((u) => u.id === d.openedByUserId) ?? null
                       const unread = unreadDisputeCountById.get(d.id) ?? 0
@@ -1348,15 +1415,33 @@ export function ProfilePage() {
                                 <button
                                   type="button"
                                   className="customerTasksApplicationsBtn"
-                                  onClick={(e) => {
+                                  onClick={async (e) => {
                                     e.preventDefault()
                                     e.stopPropagation()
                                     if (USE_API) {
-                                      void api.post(`/assignments/${task.id}/start`, {}).catch(() => {})
+                                      if (!a) return
+                                      try {
+                                        await api.post(`/assignments/${a.id}/start`, {})
+                                        await Promise.all([refreshAssignments(), refreshNotifications()])
+                                        void notifyToTelegramAndUi({
+                                          toast: toastUi,
+                                          telegramUserId,
+                                          text: t('toast.workStarted'),
+                                          tone: 'success',
+                                        })
+                                      } catch (e) {
+                                        const msg =
+                                          e instanceof ApiError
+                                            ? `${e.status ?? 'ERR'} ${String(e.message)}`
+                                            : locale === 'ru'
+                                              ? 'Не удалось начать работу.'
+                                              : 'Failed to start work.'
+                                        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                                      }
                                     } else {
                                       taskAssignmentRepo.startWork(task.id, user.id)
+                                      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.workStarted'), tone: 'success' })
                                     }
-                                    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.workStarted'), tone: 'success' })
                                   }}
                                   title={locale === 'ru' ? 'Начать работу' : 'Start work'}
                                 >
@@ -1388,8 +1473,12 @@ export function ProfilePage() {
                       const backToCompleted = `${paths.profile}?tab=executor_completed`
                       const contract = contractRepo.getForTaskExecutor(task.id, user.id)
                       const clientId = contract?.clientId ?? task.createdByUserId ?? null
-                      const alreadyRated = contract ? Boolean(ratingRepo.getForContractPair(contract.id, user.id)) : false
-                      const dispute = contract ? disputeRepo.getForContract(contract.id) : null
+                      const alreadyRated = contract ? ratings.some((r) => r.contractId === contract.id && r.fromUserId === user.id) : false
+                      const dispute = contract
+                        ? USE_API
+                          ? disputes.find((d) => d.contractId === contract.id) ?? null
+                          : disputeRepo.getForContract(contract.id)
+                        : null
                       const canSuggestRate =
                         Boolean(
                           contract &&
@@ -1661,6 +1750,18 @@ export function ProfilePage() {
                             return
                           }
                           const amountUsd = locale === 'ru' ? amountUi / usdRubRate : amountUi
+                          if (USE_API) {
+                            void (async () => {
+                              try {
+                                await serverBalanceRepo.adjust(amountUsd, 'topup')
+                                setDepositAmount('')
+                                setBalanceMessage(t('profile.balance.success'))
+                              } catch {
+                                setBalanceMessage(t('profile.balance.error'))
+                              }
+                            })()
+                            return
+                          }
                           balanceRepo.deposit(user.id, amountUsd)
                           setDepositAmount('')
                           setBalanceMessage(t('profile.balance.success'))
@@ -1672,6 +1773,20 @@ export function ProfilePage() {
                         type="button"
                         className="profileBalanceButton profileBalanceButton--ghost"
                         onClick={() => {
+                          if (USE_API) {
+                            void (async () => {
+                              try {
+                                await serverBalanceRepo.refresh()
+                                const current = serverBalanceRepo.get()
+                                if (current > 0) await serverBalanceRepo.adjust(-current, 'reset')
+                                setDepositAmount('')
+                                setBalanceMessage(t('profile.balance.resetSuccess'))
+                              } catch {
+                                setBalanceMessage(t('profile.balance.error'))
+                              }
+                            })()
+                            return
+                          }
                           balanceRepo.reset(user.id)
                           setDepositAmount('')
                           setBalanceMessage(t('profile.balance.resetSuccess'))
@@ -1795,15 +1910,41 @@ export function ProfilePage() {
       <RatingModal
         open={Boolean(rateContractId)}
         subjectName={(() => {
-          const c = rateContractId ? contractRepo.getById(rateContractId) : null
+          const c = rateContractId ? (USE_API ? (contracts.find((x) => x.id === rateContractId) ?? null) : contractRepo.getById(rateContractId)) : null
           const u = c ? users.find((x) => x.id === c.clientId) ?? null : null
           return u?.fullName
         })()}
         onClose={() => setRateContractId(null)}
         onSubmit={({ rating, comment }) => {
           if (!rateContractId || !user) return
-          const c = contractRepo.getById(rateContractId)
+          const c = USE_API ? contracts.find((x) => x.id === rateContractId) ?? null : contractRepo.getById(rateContractId)
           if (!c) return
+          if (USE_API) {
+            void (async () => {
+              try {
+                await createRatingApi({ contractId: c.id, toUserId: c.clientId, rating, comment })
+                await Promise.all([refreshRatings(), refreshNotifications()])
+                void notifyToTelegramAndUi({
+                  toast: toastUi,
+                  telegramUserId,
+                  text: locale === 'ru' ? 'Оценка отправлена.' : 'Rating submitted.',
+                  tone: 'success',
+                })
+              } catch (e) {
+                const msg =
+                  e instanceof ApiError
+                    ? `${e.status ?? 'ERR'} ${String(e.message)}`
+                    : locale === 'ru'
+                      ? 'Не удалось отправить оценку.'
+                      : 'Failed to submit rating.'
+                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                return
+              } finally {
+                setRateContractId(null)
+              }
+            })()
+            return
+          }
           ratingRepo.upsert({
             contractId: c.id,
             fromUserId: user.id,
@@ -1819,15 +1960,45 @@ export function ProfilePage() {
         open={Boolean(rateExecutorContractId)}
         title={locale === 'ru' ? 'Оценка исполнителя' : 'Rate executor'}
         subjectName={(() => {
-          const c = rateExecutorContractId ? contractRepo.getById(rateExecutorContractId) : null
+          const c = rateExecutorContractId
+            ? USE_API
+              ? contracts.find((x) => x.id === rateExecutorContractId) ?? null
+              : contractRepo.getById(rateExecutorContractId)
+            : null
           const u = c ? users.find((x) => x.id === c.executorId) ?? null : null
           return u?.fullName
         })()}
         onClose={() => setRateExecutorContractId(null)}
         onSubmit={({ rating, comment }) => {
           if (!rateExecutorContractId || !user || user.role !== 'customer') return
-          const c = contractRepo.getById(rateExecutorContractId)
+          const c = USE_API ? contracts.find((x) => x.id === rateExecutorContractId) ?? null : contractRepo.getById(rateExecutorContractId)
           if (!c) return
+          if (USE_API) {
+            void (async () => {
+              try {
+                await createRatingApi({ contractId: c.id, toUserId: c.executorId, rating, comment })
+                await Promise.all([refreshRatings(), refreshNotifications()])
+                void notifyToTelegramAndUi({
+                  toast: toastUi,
+                  telegramUserId,
+                  text: locale === 'ru' ? 'Оценка отправлена.' : 'Rating submitted.',
+                  tone: 'success',
+                })
+              } catch (e) {
+                const msg =
+                  e instanceof ApiError
+                    ? `${e.status ?? 'ERR'} ${String(e.message)}`
+                    : locale === 'ru'
+                      ? 'Не удалось отправить оценку.'
+                      : 'Failed to submit rating.'
+                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                return
+              } finally {
+                setRateExecutorContractId(null)
+              }
+            })()
+            return
+          }
           ratingRepo.upsert({
             contractId: c.id,
             fromUserId: user.id,

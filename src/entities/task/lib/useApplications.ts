@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { applicationRepo } from './applicationRepo'
 import type { TaskApplication } from '../model/application'
-import { api } from '@/shared/api/api'
+import { ApiError, api } from '@/shared/api/api'
 import { sessionRepo } from '@/shared/auth/sessionRepo'
 
 const STORAGE_KEY = 'ui-create-works.taskApplications.v1'
@@ -93,6 +93,56 @@ export function upsertApplication(app: TaskApplication) {
   }
   apiHasLoaded = true
   notifyApi()
+}
+
+function asTaskApplication(input: unknown): TaskApplication | null {
+  if (!input || typeof input !== 'object') return null
+  const x = input as any
+  if (typeof x.id !== 'string' || typeof x.taskId !== 'string' || typeof x.executorUserId !== 'string') return null
+  if (typeof x.status !== 'string') return null
+  if (typeof x.createdAt !== 'string' || typeof x.updatedAt !== 'string') return null
+  return x as TaskApplication
+}
+
+export async function selectApplicationApi(applicationId: string): Promise<TaskApplication | null> {
+  if (!USE_API) return null
+  const token = sessionRepo.getToken()
+  if (!token) return null
+  const updated = await api.post<unknown>(`/applications/${applicationId}/select`, {})
+  const app = asTaskApplication(updated)
+  if (app) upsertApplication(app)
+  return app
+}
+
+export async function rejectApplicationApi(applicationId: string): Promise<TaskApplication | null> {
+  if (!USE_API) return null
+  const token = sessionRepo.getToken()
+  if (!token) return null
+
+  // Try different backend variants to stay compatible with prod.
+  const attempts: Array<() => Promise<unknown>> = [
+    () => api.post(`/applications/${applicationId}`, { status: 'rejected' }),
+    () => api.put(`/applications/${applicationId}`, { status: 'rejected' }),
+    () => api.post(`/applications/${applicationId}/reject`, {}),
+    () => api.patch(`/applications/${applicationId}`, { status: 'rejected' }),
+  ]
+
+  let lastErr: unknown = null
+  for (const run of attempts) {
+    try {
+      const updated = await run()
+      const app = asTaskApplication(updated)
+      if (app) upsertApplication(app)
+      return app
+    } catch (e) {
+      lastErr = e
+      // Continue on 404 only (route not found). Other errors should surface.
+      if (e instanceof ApiError && e.status === 404) continue
+      throw e
+    }
+  }
+  if (lastErr) throw lastErr
+  return null
 }
 
 function subscribeApi(cb: () => void) {

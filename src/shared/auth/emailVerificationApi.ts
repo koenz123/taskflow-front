@@ -1,27 +1,25 @@
-type SendVerificationResponse = { ok: true }
-type PendingSignup = {
-  role: 'customer' | 'executor'
-  fullName: string
-  phone: string
-  email: string
-  company?: string
-  passwordHash: string
-  createdAt: string
-}
-
-type VerifyResponse = { email: string; alreadyVerified?: boolean; pending?: PendingSignup | null }
 type IsVerifiedResponse = { verified: boolean }
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? '/api'
 
-export async function sendEmailVerification(email: string) {
+type VerifyEmailCodeResponse = { ok: true; email?: string; alreadyVerified?: boolean }
+type ConsumePendingResponse =
+  | { ok: true }
+  | { token?: string; user?: { id?: string; role?: string; telegramUserId?: string | null } }
+
+export async function sendVerificationCode(emailRaw: string) {
+  const email = emailRaw.trim()
   const res = await fetch(`${API_BASE}/auth/send-verification`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email }),
   })
-  if (!res.ok) throw new Error(`send_verification_failed_${res.status}`)
-  ;(await res.json().catch(() => null)) as SendVerificationResponse | null
+  const data = (await res.json().catch(() => null)) as any
+  if (!res.ok) {
+    const code = typeof data?.error === 'string' ? data.error : `send_failed_${res.status}`
+    throw new Error(code)
+  }
+  return data as { ok?: true } | null
 }
 
 export async function registerPendingSignup(input: {
@@ -42,15 +40,23 @@ export async function registerPendingSignup(input: {
     if (res.status === 409 && data?.error) throw new Error(data.error)
     throw new Error(`register_failed_${res.status}`)
   }
-  ;(await res.json().catch(() => null)) as SendVerificationResponse | null
+  await res.json().catch(() => null)
 }
 
-export async function verifyEmailByToken(token: string): Promise<VerifyResponse> {
-  const res = await fetch(`${API_BASE}/auth/verify-email?token=${encodeURIComponent(token)}`)
-  if (!res.ok) throw new Error(`verify_failed_${res.status}`)
-  const data = (await res.json()) as VerifyResponse
-  if (!data?.email) throw new Error('verify_invalid_response')
-  return data
+export async function verifyEmailByCode(input: { email: string; code: string }): Promise<VerifyEmailCodeResponse> {
+  const email = input.email.trim()
+  const code = input.code.trim()
+  const res = await fetch(`${API_BASE}/auth/verify-email-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, code }),
+  })
+  const data = (await res.json().catch(() => null)) as any
+  if (!res.ok) {
+    const code = typeof data?.error === 'string' ? data.error : `verify_failed_${res.status}`
+    throw new Error(code)
+  }
+  return (data ?? { ok: true, email }) as VerifyEmailCodeResponse
 }
 
 export async function isEmailVerified(email: string): Promise<boolean> {
@@ -60,14 +66,19 @@ export async function isEmailVerified(email: string): Promise<boolean> {
   return Boolean(data?.verified)
 }
 
-export async function consumePendingSignup(token: string) {
+export async function consumePendingSignup(input: { email: string; code: string }): Promise<ConsumePendingResponse> {
+  const email = input.email.trim()
+  const code = input.code.trim()
   const res = await fetch(`${API_BASE}/auth/consume-pending`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token }),
+    body: JSON.stringify({ email, code }),
   })
-  if (!res.ok) throw new Error(`consume_failed_${res.status}`)
-  ;(await res.json().catch(() => null)) as SendVerificationResponse | null
+  const data = (await res.json().catch(() => null)) as any
+  if (!res.ok) {
+    const code = typeof data?.error === 'string' ? data.error : `consume_failed_${res.status}`
+    throw new Error(code)
+  }
+  return (data ?? { ok: true }) as ConsumePendingResponse
 }
-
 

@@ -7,8 +7,14 @@ import { useNotifications } from '@/entities/notification/lib/useNotifications'
 import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import { useUsers } from '@/entities/user/lib/useUsers'
 import { useTasks } from '@/entities/task/lib/useTasks'
-import { buildNotificationVM } from '@/entities/notification/lib/notificationViewModel'
+import { buildNotificationFeedVM } from '@/entities/notification/lib/notificationViewModel'
 import { api } from '@/shared/api/api'
+import {
+  markAllNotificationsReadOptimistic,
+  markNotificationReadOptimistic,
+  markNotificationsReadOptimistic,
+  refreshNotifications,
+} from '@/entities/notification/lib/useNotifications'
 import './notifications.css'
 
 type Filter = 'all' | 'unread'
@@ -40,6 +46,18 @@ export function NotificationsPage() {
     return notifications
   }, [filter, notifications])
 
+  const feed = useMemo(
+    () =>
+      buildNotificationFeedVM({
+        list,
+        actorById: userById,
+        taskById,
+        locale,
+        t,
+      }),
+    [list, locale, t, taskById, userById],
+  )
+
   const unreadCount = useMemo(() => notifications.filter((n) => !n.readAt).length, [notifications])
 
   return (
@@ -58,7 +76,10 @@ export function NotificationsPage() {
               className="notificationsBtn"
               disabled={!unreadCount}
               onClick={() => {
-                if (USE_API) void api.post('/notifications/read-all', {}).catch(() => {})
+                if (USE_API) {
+                  markAllNotificationsReadOptimistic()
+                  void api.post('/notifications/read-all', {}).then(() => refreshNotifications()).catch(() => {})
+                }
                 else notificationRepo.markAllRead(userId)
               }}
             >
@@ -85,28 +106,28 @@ export function NotificationsPage() {
           </button>
         </div>
 
-        {list.length === 0 ? (
+        {feed.length === 0 ? (
           <div className="notificationsEmpty">{t('notifications.empty')}</div>
         ) : (
           <div className="notificationsList">
-            {list.map((n) => {
-              const actor = userById.get(n.actorUserId) ?? null
-              const task = taskById.get(n.taskId) ?? null
-              const vm = buildNotificationVM({
-                n,
-                actorId: actor?.id ?? null,
-                task,
-                locale,
-                t,
-              })
+            {feed.map((vm) => {
               return (
-                <div key={n.id} className={`notificationsItem${vm.unread ? ' notificationsItem--unread' : ''}`}>
+                <div key={vm.id} className={`notificationsItem${vm.unread ? ' notificationsItem--unread' : ''}`}>
                   <Link
                     to={vm.href ?? paths.profile}
                     className="notificationsItemMain"
                     onClick={() => {
-                      if (USE_API) void api.post(`/notifications/${n.id}/read`, {}).catch(() => {})
-                      else notificationRepo.markRead(n.id)
+                      const ids = vm.sourceNotificationIds?.length ? vm.sourceNotificationIds : [vm.id]
+                      if (USE_API) {
+                        if (vm.sourceNotificationIds?.length) markNotificationsReadOptimistic(ids)
+                        else markNotificationReadOptimistic(vm.id)
+                        void Promise.allSettled(ids.map((id) => api.post(`/notifications/${id}/read`, {})))
+                          .then(() => refreshNotifications())
+                          .catch(() => {})
+                      }
+                      else {
+                        for (const id of ids) notificationRepo.markRead(id)
+                      }
                     }}
                   >
                     <span className="notificationsItemIcon" aria-hidden="true">

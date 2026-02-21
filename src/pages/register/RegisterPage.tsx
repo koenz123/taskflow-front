@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { paths } from '@/app/router/paths'
 import { useI18n } from '@/shared/i18n/I18nContext'
@@ -60,10 +60,16 @@ export function RegisterPage() {
   const devMode = useDevMode()
   const navigate = useNavigate()
   const location = useLocation()
+  const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
   const roleFromQuery = (() => {
     const qs = new URLSearchParams(location.search)
     const role = qs.get('role')
     return role === 'customer' || role === 'executor' ? role : null
+  })()
+  const backToFromQuery = (() => {
+    const qs = new URLSearchParams(location.search)
+    const backTo = (qs.get('backTo') ?? '').trim()
+    return backTo.startsWith('/') ? backTo : null
   })()
   const [form, setForm] = useState<FormState>({
     role: roleFromQuery ?? 'customer',
@@ -78,6 +84,23 @@ export function RegisterPage() {
   const [submitted, setSubmitted] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [emailTakenKind, setEmailTakenKind] = useState<null | 'taken' | 'pending'>(null)
+
+  const loginHref = useMemo(() => {
+    const email = form.email.trim()
+    const params = new URLSearchParams()
+    if (email) params.set('email', email)
+    if (backToFromQuery) params.set('backTo', backToFromQuery)
+    const q = params.toString()
+    return q ? `${paths.login}?${q}` : paths.login
+  }, [backToFromQuery, form.email])
+
+  // If user hits /register while already authenticated, redirect into the app.
+  useEffect(() => {
+    if (auth.status !== 'authenticated') return
+    const role = auth.user?.role
+    const fallback = role === 'executor' ? paths.tasks : role === 'customer' ? paths.customerTasks : paths.profile
+    navigate(backToFromQuery ?? fallback, { replace: true })
+  }, [auth.status, auth.user?.role, backToFromQuery, navigate])
 
   const errors = useMemo(() => validate(form, t), [form, t])
 
@@ -111,11 +134,21 @@ export function RegisterPage() {
         company: form.role === 'customer' ? form.company : undefined,
         password: form.password,
       })
-      if (devMode.enabled) {
-        navigate(paths.tasks, { replace: true })
-      } else {
-        navigate(`${paths.verifyEmailSent}?email=${encodeURIComponent(form.email.trim())}`)
+      if (USE_API) {
+        const params = new URLSearchParams()
+        params.set('email', form.email.trim())
+        if (backToFromQuery) params.set('backTo', backToFromQuery)
+        navigate(`${paths.verifyEmail}?${params.toString()}`, { replace: true })
+        return
       }
+
+      if (devMode.enabled) {
+        const fallback = form.role === 'executor' ? paths.tasks : paths.customerTasks
+        navigate(backToFromQuery ?? fallback, { replace: true })
+        return
+      }
+
+      navigate(`${paths.verifyEmailSent}?email=${encodeURIComponent(form.email.trim())}`)
     } catch (e) {
       if (e instanceof Error && e.message === 'email_taken') {
         setEmailTakenKind('taken')
@@ -162,11 +195,11 @@ export function RegisterPage() {
         {formError ? <div className="authErrorBanner">{formError}</div> : null}
         {emailTakenKind ? (
           <div className="authRow" style={{ marginTop: 8 }}>
-            <Link className="authLink" to={`${paths.login}?email=${encodeURIComponent(form.email.trim())}`}>
+            <Link className="authLink" to={loginHref}>
               {t('register.signInLink')}
             </Link>
             {emailTakenKind === 'pending' ? (
-              <Link className="authLink" to={`${paths.verifyEmailSent}?email=${encodeURIComponent(form.email.trim())}`}>
+              <Link className="authLink" to={`${paths.verifyEmail}?email=${encodeURIComponent(form.email.trim())}`}>
                 {t('verifyEmail.sent.resend')}
               </Link>
             ) : null}
@@ -266,7 +299,7 @@ export function RegisterPage() {
 
         <p className="authFooterText">
           {t('register.haveAccount')}{' '}
-          <Link className="authLink" to={paths.login}>
+          <Link className="authLink" to={loginHref}>
             {t('register.signInLink')}
           </Link>
         </p>

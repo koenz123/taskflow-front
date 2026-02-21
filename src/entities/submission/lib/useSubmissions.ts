@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import type { Submission } from '../model/submission'
 import { submissionRepo } from './submissionRepo'
-import { api } from '@/shared/api/api'
+import { ApiError, api } from '@/shared/api/api'
 import { sessionRepo } from '@/shared/auth/sessionRepo'
 
 const STORAGE_KEY = 'ui-create-works.submissions.v1'
@@ -20,6 +20,10 @@ let apiRefreshing = false
 let apiHasLoaded = false
 let apiLoadedForToken: string | null = null
 
+function notifyApi() {
+  for (const cb of apiStore.subs) cb()
+}
+
 export async function fetchSubmissions() {
   if (!USE_API) return
   const token = sessionRepo.getToken()
@@ -33,8 +37,8 @@ export async function fetchSubmissions() {
   if (!token) {
     apiSnapshot = []
     apiHasLoaded = true
-    for (const cb of apiStore.subs) cb()
     apiRefreshing = false
+    notifyApi()
     return
   }
   try {
@@ -44,13 +48,78 @@ export async function fetchSubmissions() {
     // keep previous
   }
   apiRefreshing = false
-  for (const cb of apiStore.subs) cb()
+  notifyApi()
+}
+
+export async function refreshSubmissions() {
+  if (!USE_API) return
+  apiHasLoaded = false
+  await fetchSubmissions()
+}
+
+function asSubmission(input: unknown): Submission | null {
+  if (!input || typeof input !== 'object') return null
+  const x = input as any
+  if (typeof x.id !== 'string' || typeof x.contractId !== 'string') return null
+  if (typeof x.createdAt !== 'string') return null
+  if (!Array.isArray(x.files)) return null
+  return x as Submission
+}
+
+export async function createSubmissionApi(input: { contractId: string; message?: string; files: Submission['files'] }) {
+  if (!USE_API) return null as Submission | null
+  const token = sessionRepo.getToken()
+  if (!token) throw new Error('unauthenticated')
+
+  const body = { message: input.message?.trim() || undefined, files: input.files }
+
+  const attempts: Array<() => Promise<unknown>> = [
+    // original contract-scoped route (may not exist on prod)
+    () => api.post(`/contracts/${input.contractId}/submissions`, body),
+    // flat route variant
+    () => api.post(`/submissions`, { contractId: input.contractId, ...body }),
+    // alternative nesting
+    () => api.post(`/submissions`, { contractId: input.contractId, submission: body }),
+    // another common alias
+    () => api.post(`/contracts/${input.contractId}/submit`, body),
+  ]
+
+  let lastErr: unknown = null
+  for (const run of attempts) {
+    try {
+      const raw = await run()
+      const s = asSubmission(raw)
+      if (s) {
+        apiSnapshot = apiSnapshot.concat([s])
+        apiHasLoaded = true
+        notifyApi()
+      } else {
+        // still refresh so UI updates
+        await refreshSubmissions()
+      }
+      return s
+    } catch (e) {
+      lastErr = e
+      if (e instanceof ApiError && e.status === 404) continue
+      throw e
+    }
+  }
+  if (lastErr) throw lastErr
+  return null
 }
 
 function subscribeApi(cb: () => void) {
   apiStore.subs.add(cb)
+  void fetchSubmissions()
+  const onSession = () => {
+    void refreshSubmissions()
+  }
+  window.addEventListener('ui-create-works.session.change', onSession)
+  window.addEventListener('storage', onSession)
   return () => {
     apiStore.subs.delete(cb)
+    window.removeEventListener('ui-create-works.session.change', onSession)
+    window.removeEventListener('storage', onSession)
   }
 }
 

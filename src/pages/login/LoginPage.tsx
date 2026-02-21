@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { paths } from '@/app/router/paths'
 import { useI18n } from '@/shared/i18n/I18nContext'
 import { TelegramLoginButton } from '@/shared/auth/TelegramLoginButton'
@@ -15,6 +15,12 @@ export function LoginPage() {
   const auth = useAuth()
   const devMode = useDevMode()
   const location = useLocation()
+  const navigate = useNavigate()
+  const backTo = useMemo(() => {
+    const qs = new URLSearchParams(location.search)
+    const v = (qs.get('backTo') ?? '').trim()
+    return v.startsWith('/') ? v : null
+  }, [location.search])
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -29,6 +35,15 @@ export function LoginPage() {
     const fromQuery = (qs.get('email') ?? '').trim()
     if (fromQuery) setEmail(fromQuery)
   }, [location.search])
+
+  useEffect(() => {
+    if (auth.status !== 'authenticated') return
+    const safeBackTo = backTo ?? ''
+    const role = auth.user?.role
+    const fallback =
+      role === 'executor' ? paths.tasks : role === 'customer' ? paths.customerTasks : role === 'arbiter' ? paths.disputes : paths.profile
+    navigate(safeBackTo || fallback, { replace: true })
+  }, [auth.status, auth.user?.role, backTo, navigate])
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -134,11 +149,11 @@ export function LoginPage() {
 
         <p className="authFooterText">
           {t('auth.noAccountJoin')}{' '}
-          <Link className="authLink" to={registerLink('customer')}>
+          <Link className="authLink" to={`${registerLink('customer')}${backTo ? `&backTo=${encodeURIComponent(backTo)}` : ''}`}>
             {t('auth.joinAsCustomer')}
           </Link>{' '}
           {t('auth.or')}{' '}
-          <Link className="authLink" to={registerLink('executor')}>
+          <Link className="authLink" to={`${registerLink('executor')}${backTo ? `&backTo=${encodeURIComponent(backTo)}` : ''}`}>
             {t('auth.joinAsExecutor')}
           </Link>
           .

@@ -1,17 +1,21 @@
-import { useMemo } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { paths, taskDetailsPath, userProfilePath } from '@/app/router/paths'
 import { useAuth } from '@/shared/auth/AuthContext'
 import { useI18n } from '@/shared/i18n/I18nContext'
-import { useTasks } from '@/entities/task/lib/useTasks'
+import { refreshTasks, useTasks } from '@/entities/task/lib/useTasks'
 import { useUsers } from '@/entities/user/lib/useUsers'
-import { useTaskAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
+import { refreshAssignments, useTaskAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
 import { taskAssignmentRepo } from '@/entities/taskAssignment/lib/taskAssignmentRepo'
 import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import './profile.css'
 import { StatusPill } from '@/shared/ui/status-pill/StatusPill'
 import { useToast } from '@/shared/ui/toast/ToastProvider'
 import { notifyToTelegramAndUi } from '@/shared/notify/notify'
+import { ApiError, api } from '@/shared/api/api'
+import { refreshNotifications } from '@/entities/notification/lib/useNotifications'
+
+const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
 export function CustomerRequestsPage() {
   const { t, locale } = useI18n()
@@ -26,14 +30,63 @@ export function CustomerRequestsPage() {
 
   const customerId = user.role === 'customer' ? user.id : null
 
+  const [busyIds, setBusyIds] = useState<Set<string>>(() => new Set())
+  const busyRef = useRef<Set<string>>(new Set())
+  const [doneIds, setDoneIds] = useState<Set<string>>(() => new Set())
+
+  const isBusy = (assignmentId: string) => busyRef.current.has(assignmentId) || busyIds.has(assignmentId)
+  const isDone = (assignmentId: string) => doneIds.has(assignmentId)
+  const markBusy = (assignmentId: string, busy: boolean) => {
+    if (busy) busyRef.current.add(assignmentId)
+    else busyRef.current.delete(assignmentId)
+    setBusyIds((prev) => {
+      const next = new Set(prev)
+      if (busy) next.add(assignmentId)
+      else next.delete(assignmentId)
+      return next
+    })
+  }
+  const markDone = (assignmentId: string, done: boolean) => {
+    setDoneIds((prev) => {
+      const next = new Set(prev)
+      if (done) next.add(assignmentId)
+      else next.delete(assignmentId)
+      return next
+    })
+  }
+
+  async function postWithFallback<T = any>(paths: string[], body: unknown) {
+    let lastErr: unknown = null
+    for (const p of paths) {
+      try {
+        return await api.post<T>(p, body)
+      } catch (e) {
+        lastErr = e
+        if (e instanceof ApiError && e.status === 404) continue
+        throw e
+      }
+    }
+    throw lastErr ?? new Error('request_failed')
+  }
+
+  async function acceptPauseApi(assignmentId: string) {
+    const id = encodeURIComponent(assignmentId)
+    await postWithFallback([`/assignments/${id}/accept-pause`, `/assignments/${id}/pause/accept`, `/assignments/${id}/accept_pause`], {})
+  }
+
+  async function rejectPauseApi(assignmentId: string) {
+    const id = encodeURIComponent(assignmentId)
+    await postWithFallback([`/assignments/${id}/reject-pause`, `/assignments/${id}/pause/reject`, `/assignments/${id}/reject_pause`], {})
+  }
+
   const pauseRequests = useMemo(() => {
     if (!customerId) return []
     const myTaskIds = new Set(tasks.filter((x) => x.createdByUserId === customerId).map((x) => x.id))
     return assignments
-      .filter((a) => a.status === 'pause_requested' && myTaskIds.has(a.taskId))
+      .filter((a) => a.status === 'pause_requested' && myTaskIds.has(a.taskId) && !doneIds.has(a.id))
       .slice()
       .sort((a, b) => (b.pauseRequestedAt ?? b.assignedAt).localeCompare(a.pauseRequestedAt ?? a.assignedAt))
-  }, [assignments, customerId, tasks])
+  }, [assignments, customerId, doneIds, tasks])
 
   if (user.role !== 'customer') {
     return (
@@ -122,7 +175,35 @@ export function CustomerRequestsPage() {
                       <button
                         type="button"
                         className="customerTasksApplicationsBtn"
+                        disabled={isBusy(req.id) || isDone(req.id)}
                         onClick={() => {
+                          if (isBusy(req.id) || isDone(req.id)) return
+                          // Prevent repeat clicks even if backend is idempotent / refresh lags.
+                          markDone(req.id, true)
+                          markBusy(req.id, true)
+
+                          if (USE_API) {
+                            void (async () => {
+                              try {
+                                await acceptPauseApi(req.id)
+                                await Promise.all([refreshAssignments(), refreshNotifications(), refreshTasks()])
+                                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseAccepted'), tone: 'success' })
+                              } catch (e) {
+                                markDone(req.id, false)
+                                const msg =
+                                  e instanceof ApiError
+                                    ? `${e.status ?? 'ERR'} ${String(e.message)}`
+                                    : locale === 'ru'
+                                      ? 'Не удалось принять паузу.'
+                                      : 'Failed to accept pause.'
+                                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                              } finally {
+                                markBusy(req.id, false)
+                              }
+                            })()
+                            return
+                          }
+
                           taskAssignmentRepo.acceptPause(req.taskId, req.executorId)
                           notificationRepo.addTaskPauseAccepted({
                             recipientUserId: req.executorId,
@@ -130,6 +211,7 @@ export function CustomerRequestsPage() {
                             taskId: req.taskId,
                           })
                           void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseAccepted'), tone: 'success' })
+                          markBusy(req.id, false)
                         }}
                       >
                         {t('customerRequests.accept')}
@@ -138,7 +220,35 @@ export function CustomerRequestsPage() {
                         type="button"
                         className="customerTasksApplicationsBtn"
                         style={{ opacity: 0.9 }}
+                        disabled={isBusy(req.id) || isDone(req.id)}
                         onClick={() => {
+                          if (isBusy(req.id) || isDone(req.id)) return
+                          // Prevent repeat clicks even if backend is idempotent / refresh lags.
+                          markDone(req.id, true)
+                          markBusy(req.id, true)
+
+                          if (USE_API) {
+                            void (async () => {
+                              try {
+                                await rejectPauseApi(req.id)
+                                await Promise.all([refreshAssignments(), refreshNotifications(), refreshTasks()])
+                                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseRejected'), tone: 'info' })
+                              } catch (e) {
+                                markDone(req.id, false)
+                                const msg =
+                                  e instanceof ApiError
+                                    ? `${e.status ?? 'ERR'} ${String(e.message)}`
+                                    : locale === 'ru'
+                                      ? 'Не удалось отклонить паузу.'
+                                      : 'Failed to reject pause.'
+                                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                              } finally {
+                                markBusy(req.id, false)
+                              }
+                            })()
+                            return
+                          }
+
                           taskAssignmentRepo.rejectPause(req.taskId, req.executorId)
                           notificationRepo.addTaskPauseRejected({
                             recipientUserId: req.executorId,
@@ -146,6 +256,7 @@ export function CustomerRequestsPage() {
                             taskId: req.taskId,
                           })
                           void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseRejected'), tone: 'info' })
+                          markBusy(req.id, false)
                         }}
                       >
                         {t('customerRequests.reject')}

@@ -15,6 +15,7 @@ import { TASK_FORMAT_OPTIONS, TASK_PLATFORM_OPTIONS } from '@/entities/task/lib/
 import { HelpTip } from '@/shared/ui/help-tip/HelpTip'
 import { createId } from '@/shared/lib/id'
 import { deleteBlob, putBlob } from '@/shared/lib/blobStore'
+import { uploadFileToServer } from '@/shared/api/uploads'
 
 type FormState = {
   executorMode: 'blogger_ad' | 'customer_post' | 'ai'
@@ -881,6 +882,48 @@ export function CreateTaskPage() {
                   const files = Array.from(e.currentTarget.files ?? [])
                   e.currentTarget.value = ''
                   if (!files.length) return
+
+                  // In API mode, reference videos must be uploaded to server (public URL),
+                  // because blobId/idb: is not accessible to other users.
+                  if (USE_API) {
+                    const file = files[0] ?? null
+                    if (!file) return
+                    const maxBytes = MAX_REFERENCE_VIDEO_MB * 1024 * 1024
+                    if (file.size > maxBytes) {
+                      alert(
+                        locale === 'ru'
+                          ? `Файл «${file.name}» слишком большой (максимум ${MAX_REFERENCE_VIDEO_MB} МБ).`
+                          : `File “${file.name}” is too large (max ${MAX_REFERENCE_VIDEO_MB} MB).`,
+                      )
+                      return
+                    }
+                    if (!file.type.startsWith('video/')) {
+                      alert(locale === 'ru' ? `Файл «${file.name}» не является видео.` : `File “${file.name}” is not a video.`)
+                      return
+                    }
+                    setReferenceBusy(true)
+                    void (async () => {
+                      try {
+                        const uploaded = await uploadFileToServer(file, file.name || 'reference.mp4')
+                        setReferenceVideos([])
+                        setField('referenceUrl', uploaded.url)
+                      } catch (e) {
+                        const code = e instanceof Error ? e.message : 'upload_failed'
+                        const msg =
+                          code === 'payload_too_large'
+                            ? locale === 'ru'
+                              ? 'Файл слишком большой для сервера (HTTP 413). Нужно увеличить лимит загрузки в nginx (client_max_body_size).'
+                              : 'File is too large for the server (HTTP 413). Increase nginx upload limit (client_max_body_size).'
+                            : locale === 'ru'
+                              ? `Не удалось загрузить видео: ${code}`
+                              : `Failed to upload video: ${code}`
+                        alert(msg)
+                      } finally {
+                        setReferenceBusy(false)
+                      }
+                    })()
+                    return
+                  }
 
                   const remaining = Math.max(0, MAX_REFERENCE_VIDEOS - referenceVideos.length)
                   if (remaining <= 0) {

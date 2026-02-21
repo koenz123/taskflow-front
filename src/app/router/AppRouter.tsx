@@ -31,6 +31,7 @@ import { DisputeThreadPage } from '@/pages/disputes/DisputeThreadPage'
 import { ChooseRolePage } from '@/pages/choose-role/ChooseRolePage'
 import { ProtectedRoute } from '@/shared/auth/ProtectedRoute'
 import { RequireTasksLoaded } from '@/shared/tasks/RequireTasksLoaded'
+import { RequireAuth } from '@/shared/auth/RequireAuth'
 
 export function AppRouter() {
   const auth = useAuth()
@@ -56,9 +57,43 @@ export function AppRouter() {
         <Route path={paths.verifyEmail} element={<VerifyEmailPage />} />
       </Route>
 
+      <Route path="/home" element={<Navigate to={paths.home} replace />} />
+
+      {/* Public: home + tasks list can be viewed without auth. */}
+      <Route element={<AppShell />}>
+        <Route
+          path={paths.home}
+          element={
+            auth.status === 'authenticated'
+              ? isExecutor
+                ? <Navigate to={paths.tasks} replace />
+                : isCustomer
+                  ? <Navigate to={paths.customerTasks} replace />
+                  : isArbiter
+                    ? <Navigate to={paths.disputes} replace />
+                    : <Navigate to={paths.profile} replace />
+              : <HomePage />
+          }
+        />
+        <Route
+          path={paths.tasks}
+          element={
+            auth.status === 'authenticated' && auth.user?.role === 'pending' ? (
+              <Navigate to={paths.chooseRole} replace />
+            ) : isCustomer ? (
+              <Navigate to={paths.customerTasks} replace />
+            ) : (
+              <TasksPage />
+            )
+          }
+        />
+      </Route>
+
       <Route
         element={
-          auth.status === 'authenticated' && auth.user?.role === 'pending' ? <Navigate to={paths.chooseRole} replace /> : <AppShell />
+          <RequireAuth>
+            {auth.status === 'authenticated' && auth.user?.role === 'pending' ? <Navigate to={paths.chooseRole} replace /> : <AppShell />}
+          </RequireAuth>
         }
       >
         <Route
@@ -120,7 +155,6 @@ export function AppRouter() {
             </ProtectedRoute>
           }
         />
-        <Route path={paths.tasks} element={isCustomer ? <Navigate to={paths.customerTasks} replace /> : <TasksPage />} />
         <Route
           path={paths.customerTasks}
           element={
@@ -182,19 +216,6 @@ export function AppRouter() {
           }
         />
         <Route path={paths.portfolio} element={<PortfolioPage />} />
-
-        <Route
-          path={paths.home}
-          element={
-            isExecutor ? <Navigate to={paths.tasks} replace /> : <HomePage />
-          }
-        />
-        <Route
-          path="/home"
-          element={
-            isExecutor ? <Navigate to={paths.tasks} replace /> : <HomePage />
-          }
-        />
 
         <Route path={paths.notFound} element={<NotFoundPage />} />
       </Route>

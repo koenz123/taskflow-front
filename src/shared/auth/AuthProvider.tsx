@@ -151,15 +151,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (code === 'email_taken') throw new Error('email_taken')
           throw new Error(code)
         }
+        // New flow: backend sends verification code to email.
+        // Some setups may still return an immediate token (legacy/auto-verify); handle both.
+        sessionRepo.clear()
         const tokenFromServer = typeof raw?.token === 'string' ? raw.token : null
         const serverUser = raw?.user
-        if (!tokenFromServer || !serverUser?.id) throw new Error('register_invalid_response')
-
-        sessionRepo.clear()
-        sessionRepo.setToken(String(tokenFromServer), { remember: true })
-        setToken(String(tokenFromServer))
-        sessionRepo.setUserId(String(serverUser.id), { remember: true })
-        setStatus('loading')
+        if (tokenFromServer && serverUser?.id) {
+          sessionRepo.setToken(String(tokenFromServer), { remember: true })
+          setToken(String(tokenFromServer))
+          sessionRepo.setUserId(String(serverUser.id), { remember: true })
+          setStatus('loading')
+        }
         return
       }
 

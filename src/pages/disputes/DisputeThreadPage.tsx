@@ -3,20 +3,21 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { paths } from '@/app/router/paths'
 import { useAuth } from '@/shared/auth/AuthContext'
 import { useI18n } from '@/shared/i18n/I18nContext'
-import { disputeRepo } from '@/entities/dispute/lib/disputeRepo'
 import { useDisputes } from '@/entities/dispute/lib/useDisputes'
 import { useContracts } from '@/entities/contract/lib/useContracts'
 import { useTasks } from '@/entities/task/lib/useTasks'
 import { pickText } from '@/entities/task/lib/taskText'
 import { useUsers } from '@/entities/user/lib/useUsers'
+import { postDisputeMessage, useDisputeMessages } from '@/entities/disputeMessage/lib/useDisputeMessages'
 import { disputeMessageRepo } from '@/entities/disputeMessage/lib/disputeMessageRepo'
-import { useDisputeMessages } from '@/entities/disputeMessage/lib/useDisputeMessages'
 import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import { auditLogRepo } from '@/entities/auditLog/lib/auditLogRepo'
 import './dispute-thread.css'
 import { DisputeWorkspacePage } from './DisputeWorkspacePage'
+import { refreshNotifications } from '@/entities/notification/lib/useNotifications'
 
 const DEV_ARBITER_USER_ID = 'user_dev_arbiter'
+const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
 function statusLabel(status: string, locale: 'ru' | 'en') {
   if (locale === 'ru') {
@@ -38,23 +39,41 @@ function statusLabel(status: string, locale: 'ru' | 'en') {
 export function DisputeThreadPage() {
   const { disputeId } = useParams()
   const auth = useAuth()
-  const user = auth.user!
   const { locale } = useI18n()
   const navigate = useNavigate()
-  // subscribe so page updates if dispute/messages change
-  useDisputes()
+  const disputes = useDisputes()
   const contracts = useContracts()
   const tasks = useTasks()
   const users = useUsers()
 
-  const dispute = disputeId ? disputeRepo.getById(disputeId) : null
+  // In theory this page is guarded by auth routes, but keep it resilient to transient nulls.
+  const user = auth.user
+  if (!user) {
+    return (
+      <main className="disputeThreadPage">
+        <div className="disputeThreadContainer">
+          <h1 className="disputeThreadTitle">{locale === 'ru' ? 'Загрузка…' : 'Loading…'}</h1>
+        </div>
+      </main>
+    )
+  }
+
+  const dispute = disputeId ? disputes.find((d) => d.id === disputeId) ?? null : null
   const contract = useMemo(() => (dispute ? contracts.find((c) => c.id === dispute.contractId) ?? null : null), [contracts, dispute])
   const task = useMemo(() => (contract ? tasks.find((t) => t.id === contract.taskId) ?? null : null), [contract, tasks])
 
   const participants = useMemo(() => {
-    if (!contract) return { customerId: null as string | null, executorId: null as string | null, arbiterId: DEV_ARBITER_USER_ID }
-    return { customerId: contract.clientId, executorId: contract.executorId, arbiterId: DEV_ARBITER_USER_ID }
-  }, [contract])
+    const d = dispute as any
+    const customerId =
+      (typeof d?.customerId === 'string' && d.customerId.trim() ? d.customerId.trim() : null) ??
+      (contract?.clientId ? String(contract.clientId) : null)
+    const executorId =
+      (typeof d?.executorId === 'string' && d.executorId.trim() ? d.executorId.trim() : null) ??
+      (contract?.executorId ? String(contract.executorId) : null)
+    const arbiterId =
+      typeof d?.assignedArbiterId === 'string' && d.assignedArbiterId.trim() ? d.assignedArbiterId.trim() : DEV_ARBITER_USER_ID
+    return { customerId, executorId, arbiterId }
+  }, [contract, dispute])
 
   const allowed = useMemo(() => {
     if (!dispute || !contract) return false
@@ -94,6 +113,20 @@ export function DisputeThreadPage() {
     if (!listRef.current) return
     listRef.current.scrollTop = listRef.current.scrollHeight
   }, [visibleMessages.length])
+
+  // Avoid showing "not found" before the first API fetch completes.
+  if (USE_API && disputeId && disputes.length === 0) {
+    return (
+      <main className="disputeThreadPage">
+        <div className="disputeThreadContainer">
+          <h1 className="disputeThreadTitle">{locale === 'ru' ? 'Загрузка спора…' : 'Loading dispute…'}</h1>
+          <div style={{ opacity: 0.85, marginTop: 8 }}>
+            <Link to={paths.profile}>{locale === 'ru' ? 'В профиль' : 'Go to profile'}</Link>
+          </div>
+        </div>
+      </main>
+    )
+  }
 
   if (!dispute || !contract) {
     return (
@@ -210,14 +243,20 @@ export function DisputeThreadPage() {
                 onClick={() => {
                   if (!dispute) return
                   const txt = locale === 'ru' ? 'Укажите таймкод несоответствия.' : 'Please provide the exact timestamp of the mismatch.'
-                  const msg = disputeMessageRepo.addSystem({ disputeId: dispute.id, text: txt })
-                  auditLogRepo.add({
-                    disputeId: dispute.id,
-                    actionType: 'system_message',
-                    actorUserId: user.id,
-                    summary: locale === 'ru' ? 'Запрос: таймкод несоответствия' : 'Request: mismatch timestamp',
-                    payload: { messageId: msg.id },
-                  })
+                  if (USE_API) {
+                    void postDisputeMessage({ disputeId: dispute.id, text: txt, kind: 'system' })
+                      .then(() => refreshNotifications())
+                      .catch(() => {})
+                  } else {
+                    const msg = disputeMessageRepo.addSystem({ disputeId: dispute.id, text: txt })
+                    auditLogRepo.add({
+                      disputeId: dispute.id,
+                      actionType: 'system_message',
+                      actorUserId: user.id,
+                      summary: locale === 'ru' ? 'Запрос: таймкод несоответствия' : 'Request: mismatch timestamp',
+                      payload: { messageId: msg.id },
+                    })
+                  }
                 }}
               >
                 {locale === 'ru' ? 'Запросить таймкод' : 'Request timestamp'}
@@ -228,14 +267,20 @@ export function DisputeThreadPage() {
                 onClick={() => {
                   if (!dispute) return
                   const txt = locale === 'ru' ? 'Пришлите исходники (если есть).' : 'Please provide source files (if available).'
-                  const msg = disputeMessageRepo.addSystem({ disputeId: dispute.id, text: txt })
-                  auditLogRepo.add({
-                    disputeId: dispute.id,
-                    actionType: 'system_message',
-                    actorUserId: user.id,
-                    summary: locale === 'ru' ? 'Запрос: исходники' : 'Request: source files',
-                    payload: { messageId: msg.id },
-                  })
+                  if (USE_API) {
+                    void postDisputeMessage({ disputeId: dispute.id, text: txt, kind: 'system' })
+                      .then(() => refreshNotifications())
+                      .catch(() => {})
+                  } else {
+                    const msg = disputeMessageRepo.addSystem({ disputeId: dispute.id, text: txt })
+                    auditLogRepo.add({
+                      disputeId: dispute.id,
+                      actionType: 'system_message',
+                      actorUserId: user.id,
+                      summary: locale === 'ru' ? 'Запрос: исходники' : 'Request: source files',
+                      payload: { messageId: msg.id },
+                    })
+                  }
                 }}
               >
                 {locale === 'ru' ? 'Запросить исходники' : 'Request sources'}
@@ -246,14 +291,20 @@ export function DisputeThreadPage() {
                 onClick={() => {
                   if (!dispute) return
                   const txt = locale === 'ru' ? 'Уточните пункт ТЗ, на который вы ссылаетесь.' : 'Please clarify which requirement item you refer to.'
-                  const msg = disputeMessageRepo.addSystem({ disputeId: dispute.id, text: txt })
-                  auditLogRepo.add({
-                    disputeId: dispute.id,
-                    actionType: 'system_message',
-                    actorUserId: auth.user!.id,
-                    summary: locale === 'ru' ? 'Запрос: уточнение пункта ТЗ' : 'Request: requirement item clarification',
-                    payload: { messageId: msg.id },
-                  })
+                  if (USE_API) {
+                    void postDisputeMessage({ disputeId: dispute.id, text: txt, kind: 'system' })
+                      .then(() => refreshNotifications())
+                      .catch(() => {})
+                  } else {
+                    const msg = disputeMessageRepo.addSystem({ disputeId: dispute.id, text: txt })
+                    auditLogRepo.add({
+                      disputeId: dispute.id,
+                      actionType: 'system_message',
+                      actorUserId: auth.user!.id,
+                      summary: locale === 'ru' ? 'Запрос: уточнение пункта ТЗ' : 'Request: requirement item clarification',
+                      payload: { messageId: msg.id },
+                    })
+                  }
                 }}
               >
                 {locale === 'ru' ? 'Уточнить пункт ТЗ' : 'Clarify requirement'}
@@ -270,6 +321,15 @@ export function DisputeThreadPage() {
               if (!dispute) return
               const isArbiter = auth.user?.role === 'arbiter' && auth.user.id === participants.arbiterId
               const kind = isArbiter && internal ? 'internal' : 'public'
+              if (USE_API) {
+                void postDisputeMessage({ disputeId: dispute.id, text: trimmed, kind })
+                  .then(() => {
+                    setText('')
+                    return refreshNotifications()
+                  })
+                  .catch(() => {})
+                return
+              }
               const msg = disputeMessageRepo.add({ disputeId: dispute.id, authorUserId: auth.user!.id, kind, text: trimmed })
               setText('')
 

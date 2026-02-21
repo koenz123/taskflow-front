@@ -4,6 +4,7 @@ type ApiRequestOptions = {
 }
 
 import { sessionRepo } from '@/shared/auth/sessionRepo'
+import { executorRestrictionRepo } from '@/entities/executorSanction/lib/executorRestrictionRepo'
 
 export class ApiError extends Error {
   status: number | null
@@ -54,7 +55,7 @@ function isAbortError(e: unknown) {
 const inflightGet = new Map<string, Promise<unknown>>()
 
 async function request<TResponse>(input: {
-  method: 'GET' | 'POST' | 'PATCH'
+  method: 'GET' | 'POST' | 'PATCH' | 'PUT'
   path: string
   body?: unknown
   options?: ApiRequestOptions
@@ -132,6 +133,22 @@ async function request<TResponse>(input: {
 
   const data = await readJsonSafe(res)
   if (!res.ok) {
+    // If backend returns executor sanctions, hydrate local restriction store so UI can react immediately.
+    if (res.status === 403 && data && typeof data === 'object' && 'error' in data) {
+      try {
+        const code = (data as any).error
+        const myId = sessionRepo.getUserId()
+        if (myId && typeof window !== 'undefined') {
+          if (code === 'executor_banned') executorRestrictionRepo.ban(myId)
+          if (code === 'respond_blocked' && typeof (data as any).until === 'string') {
+            executorRestrictionRepo.setRespondBlockedUntil(myId, (data as any).until)
+          }
+        }
+      } catch {
+        // ignore; restriction store is a UX hint, not a request correctness requirement
+      }
+    }
+
     const message =
       (data && typeof data === 'object' && 'error' in data && typeof (data as any).error === 'string'
         ? (data as any).error
@@ -156,6 +173,10 @@ export const api = {
 
   async patch<TResponse>(path: string, body: unknown, options?: ApiRequestOptions): Promise<TResponse> {
     return await request<TResponse>({ method: 'PATCH', path, body, options })
+  },
+
+  async put<TResponse>(path: string, body: unknown, options?: ApiRequestOptions): Promise<TResponse> {
+    return await request<TResponse>({ method: 'PUT', path, body, options })
   },
 }
 
