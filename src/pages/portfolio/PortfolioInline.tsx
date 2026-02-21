@@ -4,7 +4,7 @@ import { worksPath } from '@/app/router/paths'
 import { useI18n } from '@/shared/i18n/I18nContext'
 import { useTasks } from '@/entities/task/lib/useTasks'
 import { useWorks } from '@/entities/work/lib/useWorks'
-import { useUsers } from '@/entities/user/lib/useUsers'
+import { fetchUserById, useUsers } from '@/entities/user/lib/useUsers'
 import { pickText } from '@/entities/task/lib/taskText'
 import { VideoEmbed } from '@/shared/ui/VideoEmbed'
 import type { Task } from '@/entities/task/model/task'
@@ -34,6 +34,13 @@ export function PortfolioInline(props: { ownerId: string }) {
   const contracts = useContracts()
   const owner = users.find((u) => u.id === props.ownerId) ?? null
   const works = useWorks(owner?.id ?? null)
+
+  useEffect(() => {
+    const id = String(props.ownerId ?? '').trim()
+    if (!id) return
+    if (owner) return
+    void fetchUserById(id).catch(() => {})
+  }, [owner, props.ownerId])
 
   const completedMeta = useMemo(() => {
     if (!owner) return { list: [], doneAtByTaskId: new Map<string, string>(), completedTaskIds: new Set<string>() }

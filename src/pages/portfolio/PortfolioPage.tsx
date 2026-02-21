@@ -5,7 +5,7 @@ import { useI18n } from '@/shared/i18n/I18nContext'
 import { useAuth } from '@/shared/auth/AuthContext'
 import { useTasks } from '@/entities/task/lib/useTasks'
 import { useWorks } from '@/entities/work/lib/useWorks'
-import { useUsers } from '@/entities/user/lib/useUsers'
+import { fetchUserById, useUsers } from '@/entities/user/lib/useUsers'
 import { pickText } from '@/entities/task/lib/taskText'
 import { VideoEmbed } from '@/shared/ui/VideoEmbed'
 import { workRepo } from '@/entities/work/lib/workRepo'
@@ -50,6 +50,16 @@ export function PortfolioPage() {
   const contracts = useContracts()
 
   const owner = userId ? users.find((u) => u.id === userId) ?? null : null
+  const [ownerFetchTried, setOwnerFetchTried] = useState(false)
+
+  useEffect(() => {
+    const id = String(userId ?? '').trim()
+    if (!id) return
+    if (owner) return
+    // In API mode, the user list might not include arbitrary profiles by default.
+    setOwnerFetchTried(true)
+    void fetchUserById(id).catch(() => {})
+  }, [owner, userId])
 
   const completedMeta = useMemo(() => {
     if (!owner) return { list: [], doneAtByTaskId: new Map<string, string>(), completedTaskIds: new Set<string>() }
@@ -397,6 +407,20 @@ export function PortfolioPage() {
   }
 
   if (!owner) {
+    if (userId && !ownerFetchTried) {
+      return (
+        <main className="portfolioPage">
+          <div className="portfolioHeader">
+            <div>
+              <h1 className="portfolioTitle">{locale === 'ru' ? 'Загрузка…' : 'Loading…'}</h1>
+              <p className="portfolioSubtitle" style={{ opacity: 0.8 }}>
+                {locale === 'ru' ? 'Открываем профиль.' : 'Opening profile.'}
+              </p>
+            </div>
+          </div>
+        </main>
+      )
+    }
     return (
       <main className="portfolioPage">
         <div className="portfolioHeader">
