@@ -1,6 +1,6 @@
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { disputeThreadPath, paths, taskDetailsPath, taskEditPath, userProfilePath } from '@/app/router/paths'
+import { disputeThreadPath, paths, taskDetailsPath, userProfilePath } from '@/app/router/paths'
 import { applicationRepo } from '@/entities/task/lib/applicationRepo'
 import {
   fetchApplicationsForTask,
@@ -18,7 +18,6 @@ import { useI18n } from '@/shared/i18n/I18nContext'
 import type { TranslationKey } from '@/shared/i18n/translations'
 import './task-details.css'
 import { useAuth } from '@/shared/auth/AuthContext'
-import { useDevMode } from '@/shared/dev/devMode'
 import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import { formatTimeLeft, timeLeftMs } from '@/entities/task/lib/taskDeadline'
 import { timeAgo } from '@/shared/lib/timeAgo'
@@ -54,6 +53,9 @@ import { ApiError, api } from '@/shared/api/api'
 import { SplashScreen } from '@/shared/ui/SplashScreen'
 import { uploadFileToServer } from '@/shared/api/uploads'
 import type { SubmissionFile } from '@/entities/submission/model/submission'
+import type { Submission } from '@/entities/submission/model/submission'
+import { userIdMatches } from '@/shared/auth/userIdAliases'
+import { Icon } from '@/shared/ui/icon/Icon'
 
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 const MAX_UPLOAD_VIDEO_MB = 60
@@ -180,7 +182,6 @@ export function TaskDetailsPage() {
   const user = auth.user!
   const telegramUserId = user.telegramUserId ?? null
   const toastUi = (msg: string, tone?: 'success' | 'info' | 'error') => toast.showToast({ message: msg, tone })
-  const devMode = useDevMode()
   const navigate = useNavigate()
   const location = useLocation()
   const fromCreateDraft = Boolean((location.state as any)?.fromCreateDraft)
@@ -215,9 +216,30 @@ export function TaskDetailsPage() {
   const disputes = useDisputes()
   const assignments = useTaskAssignments()
   const currentUser = user
+  const executorIdCandidates = useMemo(() => {
+    if (!currentUser || currentUser.role !== 'executor') return [] as string[]
+    const out: string[] = []
+    const add = (v: unknown) => {
+      const s = typeof v === 'string' || typeof v === 'number' ? String(v).trim() : ''
+      if (!s) return
+      if (out.includes(s)) return
+      out.push(s)
+    }
+    add(currentUser.id)
+    // Some backends persist executorId as telegram id for TG users.
+    add(currentUser.telegramUserId)
+    if (currentUser.telegramUserId) add(`tg_${currentUser.telegramUserId}`)
+    return out
+  }, [currentUser])
+  const executorIdSet = useMemo(() => new Set(executorIdCandidates), [executorIdCandidates])
   const requiresCompletionLinks = (task?.executorMode ?? 'blogger_ad') !== 'customer_post'
   const requiresUploadVideo = (task?.executorMode ?? null) === 'customer_post'
   const platforms = useMemo(() => (requiresCompletionLinks ? requestedCompletionTargets(task) : []), [requiresCompletionLinks, task])
+  const uploadTargets = useMemo(() => {
+    if (!requiresUploadVideo) return [] as string[]
+    const targets = requestedCompletionTargets(task)
+    return targets.length ? targets : ['']
+  }, [requiresUploadVideo, task])
   const referenceVideos = useMemo(() => {
     const ref = task?.reference
     if (!ref) return []
@@ -271,17 +293,43 @@ export function TaskDetailsPage() {
       : [],
   )
   const [completionError, setCompletionError] = useState<string | null>(null)
-  const [uploadVideo, setUploadVideo] = useState<
-    | null
-    | { kind: 'idb'; blobId: string; name: string; mimeType: string }
-    | { kind: 'url'; url: string; name: string; mimeType: string }
-  >(null)
-  const [uploadVideoBusy, setUploadVideoBusy] = useState(false)
+  type UploadVideoValue = { kind: 'idb'; blobId: string; name: string; mimeType: string } | { kind: 'url'; url: string; name: string; mimeType: string }
+  const [uploadVideos, setUploadVideos] = useState<Record<string, UploadVideoValue | null>>({})
+  const [uploadBusyByTarget, setUploadBusyByTarget] = useState<Record<string, boolean>>({})
+  const uploadVideoInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+
+  useEffect(() => {
+    if (!requiresUploadVideo) return
+    setUploadVideos((prev) => {
+      const next: Record<string, UploadVideoValue | null> = {}
+      for (const t of uploadTargets) next[t] = prev[t] ?? null
+      return next
+    })
+    setUploadBusyByTarget((prev) => {
+      const next: Record<string, boolean> = {}
+      for (const t of uploadTargets) next[t] = Boolean(prev[t])
+      return next
+    })
+  }, [requiresUploadVideo, uploadTargets])
   async function postWithFallback<T = any>(paths: string[], body: unknown) {
     let lastErr: unknown = null
     for (const p of paths) {
       try {
         return await api.post<T>(p, body)
+      } catch (e) {
+        lastErr = e
+        if (e instanceof ApiError && e.status === 404) continue
+        throw e
+      }
+    }
+    throw lastErr ?? new Error('request_failed')
+  }
+
+  async function patchWithFallback<T = any>(paths: string[], body: unknown) {
+    let lastErr: unknown = null
+    for (const p of paths) {
+      try {
+        return await api.patch<T>(p, body)
       } catch (e) {
         lastErr = e
         if (e instanceof ApiError && e.status === 404) continue
@@ -320,6 +368,40 @@ export function TaskDetailsPage() {
     await postWithFallback([`/assignments/${id}/reject-pause`, `/assignments/${id}/pause/reject`, `/assignments/${id}/reject_pause`], {})
   }
 
+  async function endPauseEarlyApi(assignmentId: string) {
+    const id = encodeURIComponent(assignmentId)
+    // Prefer the real backend endpoint first (PATCH).
+    // Keep older naming variants as fallbacks for mixed deployments.
+    const paths = [
+      `/assignments/${id}/resume_pause`,
+      `/assignments/${id}/resume-pause`,
+      `/assignments/${id}/pause/resume`,
+      `/assignments/${id}/resume`,
+      `/assignments/${id}/unpause`,
+      `/assignments/${id}/pause/unpause`,
+      // Common naming variants (backend may differ)
+      `/assignments/${id}/pause/end-early`,
+      `/assignments/${id}/pause/end`,
+      `/assignments/${id}/pause/end_early`,
+      `/assignments/${id}/end-pause-early`,
+      `/assignments/${id}/end_pause_early`,
+      `/assignments/${id}/pause/stop`,
+      `/assignments/${id}/pause/cancel`,
+    ]
+
+    try {
+      await patchWithFallback(paths, {})
+      return
+    } catch (e) {
+      // Some older backends implemented this action as POST.
+      if (e instanceof ApiError && e.status === 404) {
+        await postWithFallback(paths, {})
+        return
+      }
+      throw e
+    }
+  }
+
   async function switchExecutorApi(assignmentId: string) {
     const id = encodeURIComponent(assignmentId)
     await postWithFallback(
@@ -334,6 +416,8 @@ export function TaskDetailsPage() {
     )
   }
   const [submissionMessage, setSubmissionMessage] = useState('')
+  const [submissionsByContractId, setSubmissionsByContractId] = useState<Record<string, Submission | null>>({})
+  const submissionsByContractIdBusyRef = useRef<Set<string>>(new Set())
   const [copyrightWaiverAccepted, setCopyrightWaiverAccepted] = useState(false)
   const [copyrightWaiverTouched, setCopyrightWaiverTouched] = useState(false)
   const [copyrightHelpOpen, setCopyrightHelpOpen] = useState(false)
@@ -346,12 +430,14 @@ export function TaskDetailsPage() {
   const [optimisticSubmittedForReview, setOptimisticSubmittedForReview] = useState(false)
   const [rateCustomerOpen, setRateCustomerOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [insufficientBalanceOpen, setInsufficientBalanceOpen] = useState(false)
   const [deleteAfterPath, setDeleteAfterPath] = useState<string | null>(null)
   const [noStartPrompt, setNoStartPrompt] = useState<null | { applicationId: string; count: number }>(null)
   const [chooseOtherPrompt, setChooseOtherPrompt] = useState<null | { executorId: string }>(null)
   const [openDisputePrompt, setOpenDisputePrompt] = useState<null | { executorId: string }>(null)
   const [reviewRevisionModalContractId, setReviewRevisionModalContractId] = useState<string | null>(null)
   const [blockedModal, setBlockedModal] = useState<null | { title: string; message: string }>(null)
+  const [submissionDetailsOpen, setSubmissionDetailsOpen] = useState<null | { contractId: string; executorUserId: string }>(null)
   const taskApplications = useMemo(
     () => (task ? applications.filter((app) => app.taskId === task.id) : []),
     [applications, task],
@@ -394,9 +480,9 @@ export function TaskDetailsPage() {
   const userApplication = useMemo(
     () =>
       currentUser && task
-        ? applications.find((app) => app.taskId === task.id && app.executorUserId === currentUser.id) ?? null
+        ? applications.find((app) => app.taskId === task.id && executorIdSet.has(String(app.executorUserId))) ?? null
         : null,
-    [applications, currentUser, task],
+    [applications, currentUser, executorIdSet, task],
   )
 
   const requestDelete = (afterPath: string) => {
@@ -417,7 +503,8 @@ export function TaskDetailsPage() {
         : [],
     )
     setCompletionError(null)
-    setUploadVideo(null)
+    setUploadVideos({})
+    setUploadBusyByTarget({})
     setCopyrightWaiverAccepted(false)
     setCopyrightWaiverTouched(false)
     setCopyrightHelpOpen(false)
@@ -528,17 +615,18 @@ export function TaskDetailsPage() {
   const assignedCount = task.assignedExecutorIds.length
   const maxExecutors = task.maxExecutors ?? 1
   const slotsAvailable = assignedCount < maxExecutors
-  const isExecutorAssigned = auth.user?.role === 'executor' && task.assignedExecutorIds.includes(auth.user.id)
+  const isExecutorAssigned =
+    currentUser?.role === 'executor' && task.assignedExecutorIds.some((x) => executorIdSet.has(String(x)))
   const hasAnyApplication = Boolean(userApplication)
   const linkProvided = completionLinks.every((x) => x.url.trim().length > 0)
   const myContract = useMemo(() => {
     if (!task || !currentUser || currentUser.role !== 'executor') return null
-    return contracts.find((c) => c.taskId === task.id && c.executorId === currentUser.id) ?? null
-  }, [contracts, currentUser, task])
+    return contracts.find((c) => c.taskId === task.id && executorIdSet.has(String(c.executorId))) ?? null
+  }, [contracts, currentUser, executorIdSet, task])
   const myAssignment = useMemo(() => {
     if (!task || !currentUser || currentUser.role !== 'executor') return null
-    return assignments.find((a) => a.taskId === task.id && a.executorId === currentUser.id) ?? null
-  }, [assignments, currentUser, task])
+    return assignments.find((a) => a.taskId === task.id && executorIdSet.has(String(a.executorId))) ?? null
+  }, [assignments, currentUser, executorIdSet, task])
   const myDispute = useMemo(() => {
     if (!myContract) return null
     return USE_API ? disputes.find((d) => d.contractId === myContract.id) ?? null : disputeRepo.getForContract(myContract.id)
@@ -623,13 +711,6 @@ export function TaskDetailsPage() {
     !isExpired &&
     !submittedForReviewByMe
 
-  const canDevAutoSubmit =
-    devMode.enabled &&
-    auth.user?.role === 'executor' &&
-    isExecutorAssigned &&
-    Boolean(task.createdByUserId) &&
-    Boolean(myAssignment) &&
-    (myAssignment?.status === 'pending_start' || myAssignment?.status === 'in_progress' || myAssignment?.status === 'overdue')
   const canAttemptApplyBase =
     auth.user?.role === 'executor' &&
     slotsAvailable &&
@@ -643,21 +724,21 @@ export function TaskDetailsPage() {
       ? executorRestrictionRepo.canRespond(auth.user.id, nowMs)
       : ({ ok: true, reason: null, until: null } as const)
   // `canAttemptApplyBase` controls visibility; `respondGuard` controls ability.
-  const hasRequiredDeliverable = requiresUploadVideo ? Boolean(uploadVideo) : linkProvided
+  const hasRequiredDeliverable = requiresUploadVideo
+    ? uploadTargets.length > 0 && uploadTargets.every((t) => Boolean(uploadVideos[t]))
+    : linkProvided
   const canComplete = canShowCompletionForm && hasRequiredDeliverable && copyrightWaiverAccepted
   const completionButtonDisabled = !canComplete
   const isPostedByMe = auth.user?.role === 'customer' && task.createdByUserId === auth.user.id
   const showCustomerWaitingStatus = isPostedByMe && overdueAssignments.length > 0 && task.status === 'in_progress'
-  const canDeleteAny = devMode.enabled
+  const hasNonRejectedApplications = taskApplications.some((a) => a.status !== 'rejected')
   const canDelete =
-    (isPostedByMe || canDeleteAny) &&
-    task.status === 'open' &&
-    assignedCount === 0
+    isPostedByMe && !hasNonRejectedApplications && task.status === 'open' && assignedCount === 0
   const showSingleDeleteCta =
     isPostedByMe &&
     task.status === 'open' &&
     assignedCount === 0 &&
-    taskApplications.length === 0
+    !hasNonRejectedApplications
   const draftEditBackTo = backTo ?? paths.customerTasks
 
   const canManageApplications = isPostedByMe && !isExpired
@@ -682,6 +763,82 @@ export function TaskDetailsPage() {
       (c) => c.taskId === id && c.clientId === auth.user!.id && (c.status === 'submitted' || c.status === 'disputed'),
     )
   }, [auth.user, contracts, id])
+
+  const reviewLikeContractsForTask = useMemo(() => {
+    if (!auth.user || auth.user.role !== 'customer') return []
+    return contracts.filter((c) => c.taskId === id && c.clientId === auth.user!.id && (c.status === 'submitted' || c.status === 'disputed'))
+  }, [auth.user, contracts, id])
+
+  // Keep submissions fresh for the customer while the task is in review/dispute.
+  useEffect(() => {
+    if (!USE_API) return
+    if (!isPostedByMe) return
+    if (!hasReviewLikeContractsForTask) return
+    void refreshSubmissions()
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      void refreshSubmissions()
+    }, 12000)
+    return () => window.clearInterval(interval)
+  }, [hasReviewLikeContractsForTask, isPostedByMe, id])
+
+  useEffect(() => {
+    if (!USE_API) return
+    if (!isPostedByMe) return
+    if (!reviewLikeContractsForTask.length) return
+
+    let cancelled = false
+
+    const fetchForContract = async (contractId: string) => {
+      if (submissionsByContractIdBusyRef.current.has(contractId)) return
+      submissionsByContractIdBusyRef.current.add(contractId)
+      try {
+        const attempts: Array<() => Promise<any>> = [
+          () => api.get(`/submissions?contractId=${encodeURIComponent(contractId)}`),
+          () => api.get(`/contracts/${encodeURIComponent(contractId)}/submissions`),
+          () => api.get(`/contracts/${encodeURIComponent(contractId)}/submission`),
+        ]
+        let raw: any = null
+        let lastErr: unknown = null
+        for (const run of attempts) {
+          try {
+            raw = await run()
+            break
+          } catch (e) {
+            lastErr = e
+            if (e instanceof ApiError && e.status === 404) continue
+            throw e
+          }
+        }
+        if (!raw) {
+          if (lastErr) throw lastErr
+          return
+        }
+        const list = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : Array.isArray(raw?.data) ? raw.data : raw ? [raw] : []
+        const normalized = (list as unknown[])
+          .map((x) => submissionRepo.normalize(x) ?? submissionRepo.normalize((x as any)?.submission) ?? submissionRepo.normalize((x as any)?.data))
+          .filter(Boolean) as Submission[]
+        if (!normalized.length) return
+        const latest = normalized.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null
+        if (!latest) return
+        if (cancelled) return
+        setSubmissionsByContractId((prev) => ({ ...prev, [contractId]: latest }))
+      } finally {
+        submissionsByContractIdBusyRef.current.delete(contractId)
+      }
+    }
+
+    for (const c of reviewLikeContractsForTask) void fetchForContract(c.id)
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      for (const c of reviewLikeContractsForTask) void fetchForContract(c.id)
+    }, 12000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [isPostedByMe, reviewLikeContractsForTask])
 
   const recomputeTaskStatus = (taskId: string) => {
     const task = taskRepo.getById(taskId)
@@ -857,6 +1014,8 @@ export function TaskDetailsPage() {
             text: locale === 'ru' ? 'Сессия истекла. Войдите заново.' : 'Session expired. Please sign in again.',
             tone: 'error',
           })
+        } else if (e instanceof ApiError && e.status === 409 && e.message === 'insufficient_balance') {
+          setInsufficientBalanceOpen(true)
         } else {
           const message = e instanceof ApiError ? `${e.status ?? 'ERR'} ${String(e.message)}` : 'Failed to assign executor'
           void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: message, tone: 'error' })
@@ -874,6 +1033,7 @@ export function TaskDetailsPage() {
     const existingContract = contractRepo.getForTaskExecutor(task.id, app.executorUserId)
     const amount = task.budgetAmount ?? 0
     if (!existingContract && amount > 0 && !balanceRepo.withdraw(task.createdByUserId, amount)) {
+      setInsufficientBalanceOpen(true)
       return
     }
 
@@ -1013,7 +1173,7 @@ export function TaskDetailsPage() {
     void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.taskPublished'), tone: 'success' })
   }
   const isDraftPublishStep = isPostedByMe && task.status === 'draft'
-  const hasBottomActions = isDraftPublishStep || showSingleDeleteCta || canDelete || devMode.enabled
+  const hasBottomActions = isDraftPublishStep || showSingleDeleteCta || canDelete
 
   const author = task.createdByUserId ? users.find((u) => u.id === task.createdByUserId) ?? null : null
 
@@ -1038,26 +1198,34 @@ export function TaskDetailsPage() {
     if (!myContract) return
     const recipientUserId = task.createdByUserId
     if (requiresUploadVideo) {
-      if (!uploadVideo) {
+      const missing = uploadTargets.filter((t) => !uploadVideos[t]).map((t) => t || (locale === 'ru' ? 'Видео' : 'Video'))
+      if (missing.length > 0) {
         setCompletionError(t('task.completionUpload.required'))
         return null
       }
-      const files = [
-        uploadVideo.kind === 'url'
-          ? ({
-              kind: 'upload' as const,
-              url: uploadVideo.url,
-              title: uploadVideo.name,
-              mediaType: 'video' as const,
-            } satisfies SubmissionFile)
-          : ({
-              kind: 'upload' as const,
-              url: `idb:${uploadVideo.blobId}`,
-              title: uploadVideo.name,
-              mediaType: 'video' as const,
-            } satisfies SubmissionFile),
-      ]
-      return { files, firstUrl: '', recipientUserId, taskCompletionLinks: undefined }
+      const files = uploadTargets
+        .map((target) => {
+          const v = uploadVideos[target]
+          if (!v) return null
+          const label = (target ?? '').trim()
+          const title = label ? `${label} — ${v.name}` : v.name
+          return v.kind === 'url'
+            ? ({
+                kind: 'upload' as const,
+                url: v.url,
+                title,
+                mediaType: 'video' as const,
+              } satisfies SubmissionFile)
+            : ({
+                kind: 'upload' as const,
+                url: `idb:${v.blobId}`,
+                title,
+                mediaType: 'video' as const,
+              } satisfies SubmissionFile)
+        })
+        .filter(Boolean) as SubmissionFile[]
+      const firstUrl = files.find((f) => f.kind === 'upload' && typeof f.url === 'string')?.url ?? ''
+      return { files, firstUrl, recipientUserId, taskCompletionLinks: undefined }
     }
 
     if (requiresCompletionLinks) {
@@ -1164,12 +1332,80 @@ export function TaskDetailsPage() {
       }
     }
     setSubmissionMessage('')
-    setUploadVideo(null)
+    setUploadVideos({})
+    setUploadBusyByTarget({})
     setCopyrightWaiverAccepted(false)
     setCopyrightWaiverTouched(false)
     setSubmitConfirmOpen(false)
     void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.submitted'), tone: 'success' })
     setSubmittedModalOpen(true)
+  }
+
+  const openSubmission = submissionDetailsOpen
+  const openSubmissionContract = openSubmission ? contracts.find((c) => c.id === openSubmission.contractId) ?? null : null
+  const openSubmissionExecutor = openSubmission
+    ? users.find((u) => userIdMatches(u, openSubmission.executorUserId)) ?? null
+    : null
+  const openSubmissionValue = useMemo(() => {
+    if (!openSubmission) return null
+    const contractId = openSubmission.contractId
+    const override = submissionsByContractId[contractId] ?? null
+    if (override) return override
+    const latest =
+      submissions
+        .filter((s) => s.contractId === contractId && s.status === 'submitted')
+        .slice()
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null
+    return latest
+  }, [openSubmission, submissions, submissionsByContractId])
+
+  const openSubmissionFiles = useMemo(() => {
+    const s = openSubmissionValue
+    if (!s) return [] as SubmissionFile[]
+    return s.files.filter((f) => f.kind === 'external_url' || f.kind === 'upload')
+  }, [openSubmissionValue])
+
+  const parseSubmissionTitle = (title?: string) => {
+    const raw = (title ?? '').trim()
+    if (!raw) return { platform: '', name: '' }
+    const idx = raw.indexOf(' — ')
+    if (idx >= 0) return { platform: raw.slice(0, idx).trim(), name: raw.slice(idx + 3).trim() }
+    return { platform: '', name: raw }
+  }
+
+  const downloadUrlBestEffort = async (url: string, name: string) => {
+    try {
+      const res = await fetch(url, { credentials: 'include' })
+      if (!res.ok) throw new Error(`http_${res.status}`)
+      const blob = await res.blob()
+      downloadBlob(name, blob)
+    } catch {
+      window.open(url, '_blank', 'noreferrer')
+    }
+  }
+
+  const downloadSubmissionFile = async (f: SubmissionFile) => {
+    const title = parseSubmissionTitle(f.title)
+    const name = (title.name || f.title || 'video').trim() || 'video'
+    if (f.kind === 'upload' && f.url.startsWith('idb:')) {
+      const blobId = f.url.slice('idb:'.length)
+      const blob = await getBlob(blobId)
+      if (!blob) {
+        void notifyToTelegramAndUi({
+          toast: toastUi,
+          telegramUserId,
+          text:
+            locale === 'ru'
+              ? 'Этот файл доступен только на устройстве исполнителя (локальная загрузка).'
+              : 'This file is only available on the executor device (local upload).',
+          tone: 'error',
+        })
+        return
+      }
+      downloadBlob(name, blob)
+      return
+    }
+    await downloadUrlBestEffort(f.url, name)
   }
 
   return (
@@ -1214,16 +1450,28 @@ export function TaskDetailsPage() {
                   </div>
                 ) : null}
               </div>
-              <StatusPill
-                tone={pauseKindForTask ? 'paused' : showCustomerWaitingStatus ? 'pending' : task.status}
-                label={
-                  pauseKindForTask
-                    ? t(pauseKindForTask === 'paused' ? 'executor.status.paused' : 'executor.status.pauseRequested')
-                    : showCustomerWaitingStatus
-                      ? t('task.status.waiting')
-                      : statusLabel(task.status, t)
-                }
-              />
+              {(() => {
+                const hasSlot = assignedCount < maxExecutors
+                const viewerStatus =
+                  auth.user?.role === 'executor' &&
+                  !isExecutorAssigned &&
+                  hasSlot &&
+                  (task.status === 'in_progress' || task.status === 'review' || task.status === 'dispute')
+                    ? 'open'
+                    : task.status
+                return (
+                  <StatusPill
+                    tone={pauseKindForTask ? 'paused' : showCustomerWaitingStatus ? 'pending' : viewerStatus}
+                    label={
+                      pauseKindForTask
+                        ? t(pauseKindForTask === 'paused' ? 'executor.status.paused' : 'executor.status.pauseRequested')
+                        : showCustomerWaitingStatus
+                          ? t('task.status.waiting')
+                          : statusLabel(viewerStatus, t)
+                    }
+                  />
+                )
+              })()}
             </div>
 
             <div className="taskDetailsMeta">
@@ -1355,7 +1603,36 @@ export function TaskDetailsPage() {
                         type="button"
                         className="taskDetailsButton"
                         onClick={() => {
-                          taskAssignmentRepo.endPauseEarly(id, user.id)
+                          if (!auth.user) return
+                          if (USE_API) {
+                            void (async () => {
+                              try {
+                                await endPauseEarlyApi(myAssignment.id)
+                                await Promise.all([refreshAssignments(), refreshNotifications(), refreshTasks()])
+                                void notifyToTelegramAndUi({
+                                  toast: toastUi,
+                                  telegramUserId,
+                                  text: t('toast.pauseEnded'),
+                                  tone: 'success',
+                                })
+                              } catch (e) {
+                                const msg =
+                                  e instanceof ApiError && e.status === 404
+                                    ? locale === 'ru'
+                                      ? 'Не удалось снять паузу: на сервере не найден нужный endpoint. (404)'
+                                      : 'Failed to end pause: server endpoint not found. (404)'
+                                    : e instanceof ApiError
+                                      ? `${e.status ?? 'ERR'} ${String(e.message)}`
+                                      : locale === 'ru'
+                                        ? 'Не удалось снять паузу.'
+                                        : 'Failed to end pause.'
+                                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                              }
+                            })()
+                            return
+                          }
+                          // Use assignment executorId (TG/email-safe) to update local state.
+                          taskAssignmentRepo.endPauseEarly(id, myAssignment.executorId)
                         }}
                       >
                         {locale === 'ru' ? 'Снять паузу' : 'End pause'}
@@ -1597,91 +1874,6 @@ export function TaskDetailsPage() {
               <div className="taskDetailsSection">
                 <h2 className="taskDetailsSection__title">{t('task.actions.complete')}</h2>
                 <div className="taskDetailsForm">
-                  {canDevAutoSubmit && requiresCompletionLinks ? (
-                    <button
-                      type="button"
-                      className="taskDetailsButton"
-                      onClick={() => {
-                        if (!task.createdByUserId) return
-
-                        // Ensure assignment exists and is started.
-                        const existingA = taskAssignmentRepo.getForTaskExecutor(id, user.id)
-                        if (!existingA) {
-                          taskAssignmentRepo.createPendingStart({ taskId: id, executorId: user.id })
-                        }
-                        const a0 = taskAssignmentRepo.getForTaskExecutor(id, user.id)
-                        if (a0?.status === 'pending_start') {
-                          taskAssignmentRepo.startWork(id, user.id)
-                        }
-
-                        // Ensure contract exists.
-                        const existingContract = contractRepo.getForTaskExecutor(id, user.id)
-                        const contract =
-                          existingContract ??
-                          contractRepo.createActive({
-                            taskId: id,
-                            clientId: task.createdByUserId,
-                            executorId: user.id,
-                            escrowAmount: task.budgetAmount ?? 0,
-                            revisionIncluded: 2,
-                          })
-
-                        const demoUrl = 'https://example.com/demo.mp4'
-                        const demoMsg = locale === 'ru' ? 'Тестовая сдача (автозаполнение).' : 'Demo submission (autofill).'
-
-                        const submission = submissionRepo.create({
-                          contractId: contract.id,
-                          message: demoMsg,
-                        files: initCompletionLinks({
-                          platforms: requestedCompletionTargets(task),
-                          existingLinks: undefined,
-                          fallbackUrl: demoUrl,
-                        })
-                          .map((x) => ({ platform: x.platform, url: demoUrl }))
-                          .map((x) => ({
-                            kind: 'external_url' as const,
-                            url: x.url,
-                            title: x.platform || undefined,
-                            mediaType: 'video' as const,
-                          })),
-                        })
-                        contractRepo.setStatus(contract.id, 'submitted')
-                        contractRepo.setLastSubmission(contract.id, submission.id)
-                        taskAssignmentRepo.markSubmitted(id, user.id)
-
-                        taskRepo.update(id, (prev) => ({
-                          ...prev,
-                          status: 'review',
-                          reviewSubmittedAt: new Date().toISOString(),
-                        completionVideoUrl: demoUrl,
-                        completionLinks: requestedCompletionTargets(task).length
-                          ? requestedCompletionTargets(task).map((p) => ({ platform: p, url: demoUrl }))
-                          : undefined,
-                        }))
-
-                        notificationRepo.addTaskSubmitted({
-                          recipientUserId: task.createdByUserId,
-                          actorUserId: user.id,
-                          taskId: id,
-                          completionVideoUrl: demoUrl,
-                        })
-
-                      setCompletionLinks(
-                        initCompletionLinks({
-                          platforms: requestedCompletionTargets(task),
-                          existingLinks: undefined,
-                          fallbackUrl: demoUrl,
-                        }).map((x) => ({ ...x, url: demoUrl })),
-                      )
-                        setSubmissionMessage(demoMsg)
-                        setCompletionError(null)
-                        setSubmittedModalOpen(true)
-                      }}
-                      title={locale === 'ru' ? 'Dev: автозаполнить и сдать' : 'Dev: autofill and submit'}
-                    >
-                      {locale === 'ru' ? 'Тест: автосдать' : 'Dev: auto submit'}
-                    </button>
-                  ) : null}
                   {myContract?.status === 'revision_requested' ? (
                     <div className="taskDetailsHint" style={{ marginBottom: 10, whiteSpace: 'pre-line', opacity: 0.95 }}>
                       <strong>{locale === 'ru' ? 'Доработка' : 'Revision'}</strong>
@@ -1733,89 +1925,139 @@ export function TaskDetailsPage() {
                         </label>
                       ))
                     : requiresUploadVideo
-                      ? (
-                          <label className="taskDetailsField">
-                            <span className="taskDetailsField__label">{t('task.completionUpload')}</span>
-                            <input
-                              className="taskDetailsField__input"
-                              type="file"
-                              accept="video/*"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0] ?? null
-                                if (!file) return
-                                const maxBytes = MAX_UPLOAD_VIDEO_MB * 1024 * 1024
-                                if (file.size > maxBytes) {
-                                  setCompletionError(
-                                    locale === 'ru'
-                                      ? `Файл слишком большой (максимум ${MAX_UPLOAD_VIDEO_MB} МБ).`
-                                      : `File is too large (max ${MAX_UPLOAD_VIDEO_MB} MB).`,
-                                  )
-                                  e.currentTarget.value = ''
-                                  return
-                                }
-                                const mime = (file.type ?? '').trim()
-                                if (!mime.startsWith('video/')) {
-                                  setCompletionError(t('task.completionUpload.invalid'))
-                                  e.currentTarget.value = ''
-                                  return
-                                }
-                                e.currentTarget.value = ''
-                                if (USE_API) {
-                                  setUploadVideoBusy(true)
-                                  void (async () => {
-                                    try {
-                                      const uploaded = await uploadFileToServer(file, file.name || 'video.mp4')
-                                      setUploadVideo({ kind: 'url', url: uploaded.url, name: file.name || 'video', mimeType: mime })
-                                      setCompletionError(null)
-                                    } catch (err) {
-                                      const code = err instanceof Error ? err.message : 'upload_failed'
-                                      const msg =
-                                        code === 'payload_too_large'
-                                          ? locale === 'ru'
-                                            ? 'Файл слишком большой для сервера (HTTP 413). Нужно увеличить лимит загрузки в nginx (client_max_body_size).'
-                                            : 'File is too large for the server (HTTP 413). Increase nginx upload limit (client_max_body_size).'
-                                          : locale === 'ru'
-                                            ? `Не удалось загрузить видео: ${code}`
-                                            : `Failed to upload video: ${code}`
-                                      setCompletionError(msg)
-                                      setUploadVideo(null)
-                                    } finally {
-                                      setUploadVideoBusy(false)
+                      ? uploadTargets.map((target, idx) => {
+                          const current = uploadVideos[target] ?? null
+                          const busy = Boolean(uploadBusyByTarget[target])
+                          const label = target ? ` — ${target}` : ''
+                          return (
+                            <label className="taskDetailsField" key={`upload-${target || 'video'}-${idx}`}>
+                              <span className="taskDetailsField__label">
+                                {t('task.completionUpload')}
+                                {label}
+                              </span>
+                              <div className="taskDetailsFileControl">
+                                <input
+                                  ref={(el) => {
+                                    uploadVideoInputRefs.current[target] = el
+                                  }}
+                                  className="taskDetailsFileControl__native"
+                                  type="file"
+                                  accept="video/*"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0] ?? null
+                                    if (!file) return
+                                    const maxBytes = MAX_UPLOAD_VIDEO_MB * 1024 * 1024
+                                    if (file.size > maxBytes) {
+                                      setCompletionError(
+                                        locale === 'ru'
+                                          ? `Файл слишком большой (максимум ${MAX_UPLOAD_VIDEO_MB} МБ).`
+                                          : `File is too large (max ${MAX_UPLOAD_VIDEO_MB} MB).`,
+                                      )
+                                      e.currentTarget.value = ''
+                                      return
                                     }
-                                  })()
-                                  return
-                                }
+                                    const mime = (file.type ?? '').trim()
+                                    if (!mime.startsWith('video/')) {
+                                      setCompletionError(t('task.completionUpload.invalid'))
+                                      e.currentTarget.value = ''
+                                      return
+                                    }
+                                    e.currentTarget.value = ''
+                                    if (USE_API) {
+                                      setUploadBusyByTarget((prev) => ({ ...prev, [target]: true }))
+                                      void (async () => {
+                                        try {
+                                          const uploaded = await uploadFileToServer(file, file.name || 'video.mp4')
+                                          setUploadVideos((prev) => ({
+                                            ...prev,
+                                            [target]: { kind: 'url', url: uploaded.url, name: file.name || 'video', mimeType: mime },
+                                          }))
+                                          setCompletionError(null)
+                                        } catch (err) {
+                                          const code = err instanceof Error ? err.message : 'upload_failed'
+                                          const msg =
+                                            code === 'payload_too_large'
+                                              ? locale === 'ru'
+                                                ? 'Файл слишком большой для сервера (HTTP 413). Нужно увеличить лимит загрузки в nginx (client_max_body_size).'
+                                                : 'File is too large for the server (HTTP 413). Increase nginx upload limit (client_max_body_size).'
+                                              : locale === 'ru'
+                                                ? `Не удалось загрузить видео: ${code}`
+                                                : `Failed to upload video: ${code}`
+                                          setCompletionError(msg)
+                                          setUploadVideos((prev) => ({ ...prev, [target]: null }))
+                                        } finally {
+                                          setUploadBusyByTarget((prev) => ({ ...prev, [target]: false }))
+                                        }
+                                      })()
+                                      return
+                                    }
 
-                                const blobId = createId('blob')
-                                void putBlob(blobId, file).then(() => {
-                                  setUploadVideo({ kind: 'idb', blobId, name: file.name || 'video', mimeType: mime })
-                                  setCompletionError(null)
-                                })
-                              }}
-                            />
-                            {uploadVideoBusy ? (
-                              <div style={{ marginTop: 8, opacity: 0.85 }}>{locale === 'ru' ? 'Загрузка…' : 'Uploading…'}</div>
-                            ) : uploadVideo ? (
-                              <div style={{ marginTop: 8, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                                <span style={{ opacity: 0.9 }}>
-                                  {locale === 'ru' ? 'Файл:' : 'File:'} <strong>{uploadVideo.name}</strong>
-                                </span>
-                                {uploadVideo.kind === 'url' ? (
-                                  <a className="linkBtn" href={uploadVideo.url} target="_blank" rel="noreferrer">
-                                    {locale === 'ru' ? 'Открыть' : 'Open'}
-                                  </a>
-                                ) : null}
-                                <button
-                                  type="button"
-                                  className="taskDetailsButton"
-                                  onClick={() => setUploadVideo(null)}
-                                >
-                                  {locale === 'ru' ? 'Убрать' : 'Remove'}
-                                </button>
+                                    const blobId = createId('blob')
+                                    void putBlob(blobId, file).then(() => {
+                                      setUploadVideos((prev) => ({
+                                        ...prev,
+                                        [target]: { kind: 'idb', blobId, name: file.name || 'video', mimeType: mime },
+                                      }))
+                                      setCompletionError(null)
+                                    })
+                                  }}
+                                />
+
+                                {!current ? (
+                                  <button
+                                    type="button"
+                                    className="taskDetailsFileControl__pick taskDetailsFileControl__pick--full"
+                                    disabled={busy}
+                                    onClick={() => uploadVideoInputRefs.current[target]?.click()}
+                                  >
+                                    {busy
+                                      ? locale === 'ru'
+                                        ? 'Загрузка…'
+                                        : 'Uploading…'
+                                      : locale === 'ru'
+                                        ? 'Выбрать файл'
+                                        : 'Choose file'}
+                                  </button>
+                                ) : (
+                                  <>
+                                    <div className="taskDetailsFileControl__text">
+                                      <div className="taskDetailsFileControl__name">{current.name}</div>
+                                    </div>
+
+                                    <div className="taskDetailsFileControl__actions">
+                                      <button
+                                        type="button"
+                                        className="taskDetailsFileControl__pick"
+                                        disabled={busy}
+                                        onClick={() => uploadVideoInputRefs.current[target]?.click()}
+                                      >
+                                        {locale === 'ru' ? 'Заменить' : 'Replace'}
+                                      </button>
+
+                                      {current.kind === 'url' ? (
+                                        <a
+                                          className="linkBtn taskDetailsFileControl__action"
+                                          href={current.url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                        >
+                                          {locale === 'ru' ? 'Открыть' : 'Open'}
+                                        </a>
+                                      ) : null}
+                                      <button
+                                        type="button"
+                                        className="taskDetailsFileControl__remove"
+                                        onClick={() => setUploadVideos((prev) => ({ ...prev, [target]: null }))}
+                                      >
+                                        {locale === 'ru' ? 'Убрать' : 'Remove'}
+                                      </button>
+                                    </div>
+                                  </>
+                                )}
                               </div>
-                            ) : null}
-                          </label>
-                        )
+                            </label>
+                          )
+                        })
                       : null}
                   <div className="taskDetailsCopyright">
                     <div className="taskDetailsCopyright__header">
@@ -1911,7 +2153,7 @@ export function TaskDetailsPage() {
             {isPostedByMe && pauseRequestsForTask.length > 0 ? (
               <div className="taskDetailsSection">
                 {pauseRequestsForTask.map((a) => {
-                    const executor = users.find((u) => u.id === a.executorId) ?? null
+                    const executor = users.find((u) => userIdMatches(u, a.executorId)) ?? null
                     const reasonLabel =
                       a.pauseReasonId === 'illness'
                         ? locale === 'ru'
@@ -1951,7 +2193,7 @@ export function TaskDetailsPage() {
                           <div className="taskDetailsApplication__headerRight">
                             <Link
                               className="taskDetailsApplication__link"
-                              to={userProfilePath(a.executorId)}
+                              to={userProfilePath(executor?.id ?? a.executorId)}
                               state={{ backTo: taskDetailsPath(id) }}
                             >
                               {t('notifications.viewProfile')}
@@ -2265,7 +2507,13 @@ export function TaskDetailsPage() {
           {isPostedByMe && (taskApplications.length > 0 || overdueAssignments.length > 0 || hasReviewLikeContractsForTask) ? (
             <div className="taskDetailsSection">
               <div className="taskDetailsSectionHeader">
-                <h2 className="taskDetailsSection__title">{t('task.applications.title')}</h2>
+                <h2 className="taskDetailsSection__title">
+                  {hasReviewLikeContractsForTask
+                    ? locale === 'ru'
+                      ? 'Материалы сдачи'
+                      : 'Submission materials'
+                    : t('task.applications.title')}
+                </h2>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   {hasReviewLikeContractsForTask ? <StatusPill tone="review" label={t('task.status.review')} /> : null}
                   {overdueAssignments.length > 0 ? <StatusPill tone="overdue" label={t('executor.status.overdue')} /> : null}
@@ -2293,11 +2541,11 @@ export function TaskDetailsPage() {
                           .slice()
                           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null
                       : null
+                  const submissionFromOverride = contract ? submissionsByContractId[contract.id] ?? null : null
                   const submission =
                     contract
-                      ? ((contract.lastSubmissionId
-                          ? submissions.find((s) => s.id === contract.lastSubmissionId) ?? null
-                          : null) ??
+                      ? (submissionFromOverride ??
+                        (contract.lastSubmissionId ? submissions.find((s) => s.id === contract.lastSubmissionId) ?? null : null) ??
                         latestForContract)
                       : null
                   const submittedAt = submission?.createdAt ?? contract?.updatedAt ?? contract?.createdAt ?? null
@@ -2353,23 +2601,34 @@ export function TaskDetailsPage() {
                                     ? 'in_progress'
                                     : 'open'
                         : 'open'
+                  const isSubmissionLike = Boolean(isReviewLikeContract)
                   return (
                     <div
                       key={app.id}
                       className={`taskDetailsApplication taskDetailsApplication--clickable${isReviewLikeContract ? ' taskDetailsApplication--review' : ''}`}
-                      role="link"
+                      role={isSubmissionLike ? 'button' : 'link'}
                       tabIndex={0}
-                      aria-label={t('notifications.viewProfile')}
+                      aria-label={isSubmissionLike ? (locale === 'ru' ? 'Открыть материалы сдачи' : 'Open submission') : t('notifications.viewProfile')}
                       onClick={(e) => {
                         const target = e.target
                         if (target instanceof HTMLElement) {
-                          if (target.closest('a,button,input,textarea,select,[role="button"]')) return
+                          const interactive = target.closest('a,button,input,textarea,select,[role="button"]')
+                          // Ignore clicks on nested interactive elements, but allow clicking the card itself.
+                          if (interactive && interactive !== e.currentTarget) return
+                        }
+                        if (isSubmissionLike && contract) {
+                          setSubmissionDetailsOpen({ contractId: contract.id, executorUserId: app.executorUserId })
+                          return
                         }
                         navigate(userProfilePath(app.executorUserId), { state: { backTo: taskDetailsPath(id) } })
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault()
+                          if (isSubmissionLike && contract) {
+                            setSubmissionDetailsOpen({ contractId: contract.id, executorUserId: app.executorUserId })
+                            return
+                          }
                           navigate(userProfilePath(app.executorUserId), { state: { backTo: taskDetailsPath(id) } })
                         }
                       }}
@@ -2646,7 +2905,8 @@ export function TaskDetailsPage() {
                                           })()
                                         }}
                                       >
-                                        🎬 {f.title ? f.title : t('task.completionDeliverable')}
+                                        <Icon name="film" size={16} className="iconInline" />
+                                        {f.title ? f.title : t('task.completionDeliverable')}
                                       </button>
                                     ) : (
                                       <a
@@ -2657,7 +2917,8 @@ export function TaskDetailsPage() {
                                         className="taskDetailsChip"
                                         title={f.url}
                                       >
-                                        🎬 {f.title ? f.title : t('task.completionLink')}
+                                        <Icon name="film" size={16} className="iconInline" />
+                                        {f.title ? f.title : t('task.completionLink')}
                                       </a>
                                     )
                                   ))}
@@ -2740,11 +3001,6 @@ export function TaskDetailsPage() {
                         {t('task.actions.delete')}
                       </button>
                     ) : null}
-                    {devMode.enabled ? (
-                      <Link className="taskDetailsButton" to={taskEditPath(id)}>
-                        {t('task.details.edit')}
-                      </Link>
-                    ) : null}
                   </>
                 )}
               </div>
@@ -2821,6 +3077,55 @@ export function TaskDetailsPage() {
         </div>
       ) : null}
 
+      {openSubmission && openSubmissionContract ? (
+        <div className="taskDetailsSubmitOverlay" role="dialog" aria-modal="true" onClick={() => setSubmissionDetailsOpen(null)}>
+          <div className="taskDetailsSubmitModal" onClick={(e) => e.stopPropagation()}>
+            <div className="taskDetailsSubmitModal__header">
+              <div>
+                <div className="taskDetailsSubmitModal__title">{locale === 'ru' ? 'Материалы сдачи' : 'Submission materials'}</div>
+                <div className="taskDetailsSubmitModal__sub">
+                  {openSubmissionExecutor?.fullName
+                    ? openSubmissionExecutor.fullName
+                    : openSubmission.executorUserId}
+                </div>
+              </div>
+              <button type="button" className="taskDetailsSubmitModal__close" onClick={() => setSubmissionDetailsOpen(null)} aria-label={t('common.cancel')}>
+                ×
+              </button>
+            </div>
+
+            <div className="taskDetailsSubmitModal__body">
+              {openSubmissionValue?.message?.trim() ? (
+                <div className="taskDetailsSubmitModal__message">{openSubmissionValue.message}</div>
+              ) : null}
+
+              {openSubmissionFiles.length ? (
+                <div className="taskDetailsSubmitFiles">
+                  {openSubmissionFiles.map((f, idx) => {
+                    const meta = parseSubmissionTitle(f.title)
+                    return (
+                      <div key={`${f.url}-${idx}`} className="taskDetailsSubmitFiles__row">
+                        <div className="taskDetailsSubmitFiles__left">
+                          {meta.platform ? <div className="taskDetailsSubmitFiles__platform">{meta.platform}</div> : null}
+                          <div className="taskDetailsSubmitFiles__name">{meta.name || f.url}</div>
+                        </div>
+                        <button type="button" className="taskDetailsSubmitFiles__download" onClick={() => void downloadSubmissionFile(f)}>
+                          {locale === 'ru' ? 'Скачать' : 'Download'}
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div style={{ opacity: 0.75, fontSize: 13 }}>
+                  {locale === 'ru' ? 'Файлы не найдены.' : 'No files found.'}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {deleteConfirmOpen ? (
         <div
           className="submitDoneOverlay"
@@ -2850,6 +3155,36 @@ export function TaskDetailsPage() {
                 }}
               >
                 {t('task.actions.delete')}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {insufficientBalanceOpen ? (
+        <div
+          className="submitDoneOverlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={locale === 'ru' ? 'Недостаточно средств' : 'Insufficient funds'}
+          onClick={() => setInsufficientBalanceOpen(false)}
+        >
+          <div className="submitDoneModal" onClick={(e) => e.stopPropagation()}>
+            <h3 className="submitDoneModal__title">{locale === 'ru' ? 'Недостаточно средств' : 'Insufficient funds'}</h3>
+            <p className="submitDoneModal__text">{t('profile.balance.insufficient')}</p>
+            <div className="submitDoneModal__actions">
+              <button type="button" className="submitDoneModal__secondary" onClick={() => setInsufficientBalanceOpen(false)}>
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                className="submitDoneModal__primary"
+                onClick={() => {
+                  setInsufficientBalanceOpen(false)
+                  navigate(`${paths.profile}?tab=balance`)
+                }}
+              >
+                {t('profile.balance.add')}
               </button>
             </div>
           </div>

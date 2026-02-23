@@ -83,8 +83,94 @@
 
 .editProfileInput:focus {
   outline: none;
-  border-color: var(--border3);
-  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.12);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  box-shadow: 0 0 0 4px var(--ring);
+}
+
+.editProfilePhoneControl {
+  width: 100%;
+  display: flex;
+  align-items: stretch;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card2);
+  overflow: hidden;
+}
+
+.editProfilePhoneControl:focus-within {
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  box-shadow: 0 0 0 4px var(--ring);
+}
+
+.editProfilePhoneControl__country {
+  min-width: 170px;
+  max-width: 260px;
+  border-right: 1px solid var(--border2);
+  display: flex;
+  align-items: stretch;
+}
+
+.editProfilePhoneControl__country .customSelectContainer {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  gap: 0;
+}
+
+.editProfilePhoneControl__country .customSelectLabel {
+  display: none;
+}
+
+.editProfilePhoneControl__country .customSelectButton {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 10px 12px;
+  height: 100%;
+  min-height: 0;
+}
+
+.editProfilePhoneControl__country .customSelectButton:hover {
+  border-color: transparent;
+  background: rgb(var(--accent-rgb) / 0.06);
+}
+
+.editProfilePhoneControl__country .customSelectButton:focus-visible {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.editProfilePhoneControl__country .customSelectButton--open {
+  border-color: transparent;
+  box-shadow: none;
+  background: rgb(var(--accent-rgb) / 0.08);
+}
+
+.editProfilePhoneControl__country .customSelectValue {
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.editProfilePhoneControl__country .customSelectArrow {
+  opacity: 0.7;
+}
+
+.editProfilePhoneControl__input {
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  padding: 10px 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+@media (pointer: coarse) {
+  .editProfilePhoneControl__country .customSelectButton,
+  .editProfilePhoneControl__input {
+    min-height: var(--tap);
+    padding: 0 12px;
+  }
 }
 
 .editProfileError {
@@ -153,13 +239,15 @@
 }
 
 .editProfileBtn--primary {
-  border-color: rgba(99, 102, 241, 0.55);
-  background: rgba(99, 102, 241, 0.18);
+  border-color: rgb(var(--accent-rgb) / 0.75);
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 
 .editProfileBtn--primary:hover {
-  border-color: rgba(99, 102, 241, 0.75);
-  background: rgba(99, 102, 241, 0.24);
+  border-color: rgb(var(--accent-rgb) / 0.95);
+  background: var(--accent);
+  filter: brightness(0.99);
 }
 
 .editProfileBtn--inactive {
@@ -168,8 +256,9 @@
 }
 
 .editProfileBtn--inactive:hover {
-  border-color: rgba(99, 102, 241, 0.55);
-  background: rgba(99, 102, 241, 0.18);
+  border-color: rgb(var(--accent-rgb) / 0.75);
+  background: var(--accent);
+  filter: none;
 }
 
 .editProfileCancelLink {
@@ -220,6 +309,15 @@
 .editProfileModalTitle {
   margin: 0;
   font-size: 18px;
+}
+
+.editProfileModerationBanner {
+  margin-top: 10px;
+  border-radius: 14px;
+  border: 1px solid rgb(var(--accent-rgb) / 0.45);
+  background: rgb(var(--accent-rgb) / 0.10);
+  padding: 12px 12px;
+  color: var(--text);
 }
 
 .editProfileSocialsGrid {

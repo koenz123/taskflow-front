@@ -5,6 +5,7 @@ import './auth-shell.css'
 import '@/pages/auth/auth-form.css'
 import { getActiveTheme, setTheme } from '@/shared/theme/theme'
 import { useState } from 'react'
+import { Icon } from '@/shared/ui/icon/Icon'
 
 export function AuthShell() {
   const { locale, setLocale, t } = useI18n()
@@ -51,7 +52,7 @@ export function AuthShell() {
               setThemeState(next)
             }}
           >
-            <span aria-hidden="true">{theme === 'dark' ? '🌙' : '☀️'}</span>
+            <Icon name={theme === 'dark' ? 'moon' : 'sun'} size={18} />
           </button>
 
           <Link className="authShell__home" to={paths.home}>

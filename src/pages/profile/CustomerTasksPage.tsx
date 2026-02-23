@@ -29,7 +29,6 @@ import { noStartViolationCountLast90d } from '@/entities/executorSanction/lib/no
 import { NoStartAssignModal } from '@/features/sanctions/NoStartAssignModal'
 import { refreshAssignments, useTaskAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
 import { refreshNotifications } from '@/entities/notification/lib/useNotifications'
-import { useDevMode } from '@/shared/dev/devMode'
 import './profile.css'
 import { previewMetaList } from '@/shared/lib/metaList'
 import { StatusPill } from '@/shared/ui/status-pill/StatusPill'
@@ -37,6 +36,7 @@ import { Pagination } from '@/shared/ui/pagination/Pagination'
 import { useToast } from '@/shared/ui/toast/ToastProvider'
 import { notifyToTelegramAndUi } from '@/shared/notify/notify'
 import { ApiError } from '@/shared/api/api'
+import { Icon } from '@/shared/ui/icon/Icon'
 
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
@@ -66,7 +66,6 @@ export function CustomerTasksPage() {
   const toast = useToast()
   const telegramUserId = auth.user?.telegramUserId ?? null
   const toastUi = (msg: string, tone?: 'success' | 'info' | 'error') => toast.showToast({ message: msg, tone })
-  const devMode = useDevMode()
   const navigate = useNavigate()
   const tasks = useTasks()
   const users = useUsers()
@@ -284,6 +283,11 @@ export function CustomerTasksPage() {
         ])
         void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.executorAssigned'), tone: 'success' })
       } catch (e) {
+        if (e instanceof ApiError && e.status === 409 && e.message === 'insufficient_balance') {
+          const taskId = activeTask?.id ?? applicationsOverlayTaskId ?? app.taskId
+          if (taskId) setInsufficientAlertTaskId(taskId)
+          return
+        }
         const msg =
           e instanceof ApiError
             ? `${e.status ?? 'ERR'} ${String(e.message)}`
@@ -505,59 +509,16 @@ export function CustomerTasksPage() {
               ) : null}
             </div>
 
-            {devMode.enabled ? (
-              <Link className="customerTasksArchiveBtn" to={paths.customerArchive}>
-                📦 {t('customerTasks.archive.open')}
-              </Link>
-            ) : null}
             <Link className="customerTasksArchiveBtn" to={paths.customerReview}>
-              ✅ {t('customerReview.title')}
+              <Icon name="check" size={16} className="iconInline" />
+              {t('customerReview.title')}
               {reviewCount ? ` (${reviewCount})` : ''}
             </Link>
             <Link className="customerTasksArchiveBtn" to={paths.customerRequests}>
-              ⏸️ {t('customerRequests.title')}
+              <Icon name="pause" size={16} className="iconInline" />
+              {t('customerRequests.title')}
               {pauseRequestsCount ? ` (${pauseRequestsCount})` : ''}
             </Link>
-
-            {devMode.enabled && user.role === 'customer' ? (
-              <button
-                type="button"
-                className="customerTasksArchiveBtn"
-                onClick={() => {
-                  const demo = taskRepo.create({
-                    title: { ru: 'Тестовое задание (dev)', en: 'Demo task (dev)' },
-                    shortDescription: {
-                      ru: 'Создано одной кнопкой для ускорения тестов.',
-                      en: 'Created by one button to speed up testing.',
-                    },
-                    requirements: {
-                      ru: '- Ссылка на видео\n- Короткое сообщение\n',
-                      en: '- Video link\n- Short message\n',
-                    },
-                    description: {
-                      ru: 'Это тестовое задание. Быстро проверяйте таймеры/паузы/споры.',
-                      en: 'This is a demo task to quickly test timers/pauses/disputes.',
-                    },
-                    createdByUserId: user.id,
-                    category: 'Dev',
-                    location: 'Auto',
-                    budgetAmount: 0,
-                    budgetCurrency: locale === 'ru' ? 'RUB' : 'USD',
-                    maxExecutors: 1,
-                    dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-                    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-                  })
-                  taskRepo.update(demo.id, (prev) => ({
-                    ...prev,
-                    status: 'open',
-                  }))
-                  navigate(taskDetailsPath(demo.id))
-                }}
-                title={locale === 'ru' ? 'Dev: создать и опубликовать тестовое задание' : 'Dev: create and publish demo task'}
-              >
-                {locale === 'ru' ? '🧪 Тест: создать' : '🧪 Dev: create'}
-              </button>
-            ) : null}
           </div>
         </div>
 
@@ -568,7 +529,8 @@ export function CustomerTasksPage() {
                 <>
                   <div style={{ marginBottom: 14 }}>{t('customerTasks.empty.noPublished')}</div>
                   <Link className="customerTasksArchiveBtn" to={paths.taskCreate}>
-                    ➕ {t('nav.postTask')}
+                    <Icon name="plus" size={16} className="iconInline" />
+                    {t('nav.postTask')}
                   </Link>
                 </>
               ) : (
@@ -628,30 +590,36 @@ export function CustomerTasksPage() {
 
                       <div className="customerTasksItemBadges">
                         <span className="customerTasksItemBadge">
-                          🗓️ {t('tasks.published')}: {timeAgo(task.createdAt, locale)}
+                          <Icon name="calendar" size={16} className="iconInline" />
+                          {t('tasks.published')}: {timeAgo(task.createdAt, locale)}
                         </span>
                         {task.status !== 'closed' && task.dueDate ? (
                           <span className="customerTasksItemBadge">
-                            📅 {t('tasks.due')}: {task.dueDate}
+                            <Icon name="calendar" size={16} className="iconInline" />
+                            {t('tasks.due')}: {task.dueDate}
                           </span>
                         ) : null}
                         {previewMetaList(task.category, 3) ? (
                           <span className="customerTasksItemBadge" style={{ whiteSpace: 'normal' }}>
-                            📱 {t('task.create.category')}: {previewMetaList(task.category, 3)}
+                            <Icon name="phone" size={16} className="iconInline" />
+                            {t('task.create.category')}: {previewMetaList(task.category, 3)}
                           </span>
                         ) : null}
                         {previewMetaList(task.location, 3) ? (
                           <span className="customerTasksItemBadge" style={{ whiteSpace: 'normal' }}>
-                            🎞️ {t('task.create.location')}: {previewMetaList(task.location, 3)}
+                            <Icon name="film" size={16} className="iconInline" />
+                            {t('task.create.location')}: {previewMetaList(task.location, 3)}
                           </span>
                         ) : null}
                         <span className="customerTasksItemBadge">
-                          👥 {t('task.meta.assigned')}: {task.assignedExecutorIds.length}/{task.maxExecutors ?? 1}
+                          <Icon name="users" size={16} className="iconInline" />
+                          {t('task.meta.assigned')}: {task.assignedExecutorIds.length}/{task.maxExecutors ?? 1}
                         </span>
                         {task.completionVideoUrl ? (
                           <span className="customerTasksItemBadge customerTasksItemBadge--link">
                             <a href={task.completionVideoUrl} target="_blank" rel="noreferrer">
-                              🎬 {t('task.completionLink')}
+                              <Icon name="film" size={16} className="iconInline" />
+                              {t('task.completionLink')}
                             </a>
                           </span>
                         ) : null}
@@ -822,18 +790,21 @@ export function CustomerTasksPage() {
           aria-label={t('profile.balance.insufficient')}
           onClick={() => setInsufficientAlertTaskId(null)}
         >
-          <div className="profileModal" onClick={(e) => e.stopPropagation()}>
+          <div className="profileModal profileModal--compact" onClick={(e) => e.stopPropagation()}>
             <div className="profileModalHeader">
-              <h2 className="profileModalTitle">{t('profile.balance.insufficient')}</h2>
+              <h2 className="profileModalTitle">{locale === 'ru' ? 'Недостаточно средств' : 'Insufficient funds'}</h2>
               <button type="button" className="profileModalClose" onClick={() => setInsufficientAlertTaskId(null)} aria-label={t('common.cancel')}>
                 ×
               </button>
             </div>
-            <div className="profileBalanceMessage" style={{ marginTop: 10 }}>
+            <div className="profileBalanceMessage">
               {t('profile.balance.insufficient')}
             </div>
-            <div className="profileConfirmActions" style={{ marginTop: 14 }}>
-              <Link className="profileBtn profileBtn--success" to={`${paths.profile}?tab=balance`} onClick={() => setInsufficientAlertTaskId(null)}>
+            <div className="profileModalActions">
+              <button type="button" className="profileBtn" onClick={() => setInsufficientAlertTaskId(null)}>
+                {t('common.cancel')}
+              </button>
+              <Link className="profileBtn profileBtn--accent" to={`${paths.profile}?tab=balance`} onClick={() => setInsufficientAlertTaskId(null)}>
                 {t('profile.balance.add')}
               </Link>
             </div>

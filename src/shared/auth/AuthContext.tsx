@@ -22,9 +22,9 @@ export type AuthApi = {
 
   signIn: (email: string, password: string, opts?: { remember?: boolean }) => Promise<void>
   signInWithTelegram: (tgUser: TgUser) => Promise<void>
+  signInWithGoogle: (idToken: string, opts?: { remember?: boolean }) => Promise<void>
   chooseRole: (role: 'customer' | 'executor') => Promise<void>
   signOut: () => void
-  switchUser: (userId: string) => void
 
   updateProfile: (input: {
     fullName: string
@@ -33,7 +33,7 @@ export type AuthApi = {
     company?: string
     socials?: Partial<Record<SocialPlatform, string>>
     avatarDataUrl?: string
-  }) => void
+  }) => Promise<void>
 }
 
 export const AuthContext = createContext<AuthApi | null>(null)

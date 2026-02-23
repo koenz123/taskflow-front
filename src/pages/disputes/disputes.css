@@ -56,8 +56,8 @@
 }
 
 .disputesFilter--active {
-  border-color: rgba(124, 58, 237, 0.55);
-  background: rgba(124, 58, 237, 0.14);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  background: rgb(var(--accent-rgb) / 0.12);
 }
 
 .disputesEmpty {

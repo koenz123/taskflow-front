@@ -66,14 +66,14 @@
 
 .helpTip__btn:hover {
   transform: translateY(-1px);
-  border-color: rgba(124, 58, 237, 0.55);
-  background: rgba(124, 58, 237, 0.18);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  background: rgb(var(--accent-rgb) / 0.16);
   color: var(--text);
 }
 
 .helpTip__btn--active {
-  border-color: rgba(124, 58, 237, 0.75);
-  background: rgba(124, 58, 237, 0.26);
+  border-color: rgb(var(--accent-rgb) / 0.75);
+  background: rgb(var(--accent-rgb) / 0.22);
   color: var(--text);
 }
 

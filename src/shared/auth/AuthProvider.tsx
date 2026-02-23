@@ -8,7 +8,6 @@ import { sha256Base64 } from '@/shared/lib/crypto'
 import { setLogContext } from '@/shared/logging/logger'
 import type { TgUser } from './TelegramLoginButton'
 import { api as httpApi } from '@/shared/api/api'
-import { useDevMode } from '@/shared/dev/devMode'
 
 // Convenience re-export to allow `import { useAuth } from "@/shared/auth/AuthProvider"`
 export { useAuth } from './AuthContext'
@@ -30,7 +29,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<'loading' | 'unauthenticated' | 'authenticated'>('loading')
   const [user, setUser] = useState<User | null>(null)
   const [token, setToken] = useState<string | null>(() => sessionRepo.getToken())
-  const devMode = useDevMode()
   const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
   const setUserStable = useCallback((me: User | null) => {
@@ -161,23 +159,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
-      // Dev-only: allow immediate sign-up without email verification link.
-      if (devMode.enabled) {
-        const created = await userRepo.create({
-          role: input.role,
-          fullName: input.fullName,
-          phone: input.phone,
-          email: input.email,
-          company: input.company,
-          password: input.password,
-        })
-        const verified = userRepo.markEmailVerified(created.email) ?? created
-        sessionRepo.setUserId(verified.id, { remember: true })
-        setUserStable(verified)
-        setStatus('authenticated')
-        return
-      }
-
       // Don't create user until email is verified.
       if (userRepo.findByEmail(input.email)) throw new Error('email_taken')
       const passwordHash = await sha256Base64(input.password)
@@ -190,7 +171,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         passwordHash,
       })
     },
-    [USE_API, devMode.enabled],
+    [USE_API],
   )
 
   const signIn = useCallback(
@@ -318,27 +299,73 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [status, setUserStable],
   )
 
-  const switchUser = useCallback(
-    (userId: string) => {
-      // In API mode, identity is derived from the JWT token (/me).
-      // Local "switch user" makes UI and API auth diverge (refresh snaps back).
-      if (USE_API) {
-        sessionRepo.clear()
-        setToken(null)
-        setUserStable(null)
-        setStatus('unauthenticated')
-        return
+  const signInWithGoogle = useCallback(
+    async (idToken: string, opts?: { remember?: boolean }) => {
+      const remember = opts?.remember ?? true
+      const tokenStr = String(idToken ?? '').trim()
+      if (!tokenStr) throw new Error('google_login_invalid_token')
+
+      if (!USE_API) {
+        throw new Error('google_login_requires_api')
       }
-      sessionRepo.setUserId(userId)
-      const u = userRepo.getById(userId)
-      setUserStable(u)
-      setStatus(u ? 'authenticated' : 'unauthenticated')
+
+      const API_BASE = import.meta.env.VITE_API_BASE ?? '/api'
+      const attempts: Array<() => Promise<Response>> = [
+        () =>
+          fetch(joinUrl(API_BASE, '/auth/google'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ idToken: tokenStr }),
+          }),
+        () =>
+          fetch(joinUrl(API_BASE, '/auth/google/login'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ idToken: tokenStr }),
+          }),
+        () =>
+          fetch(joinUrl(API_BASE, '/auth/google/signin'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ idToken: tokenStr }),
+          }),
+      ]
+
+      let last: { status: number; raw: any } | null = null
+      for (const run of attempts) {
+        const r = await run()
+        const raw = (await r.json().catch(() => null)) as any
+        if (r.ok) {
+          const tokenFromServer = typeof raw?.token === 'string' ? raw.token : null
+          const serverUser = raw?.user ?? (raw && typeof raw === 'object' && 'id' in raw ? raw : null)
+          if (!tokenFromServer || !serverUser?.id) throw new Error('google_login_invalid_response')
+
+          sessionRepo.clear()
+          sessionRepo.setToken(String(tokenFromServer), { remember })
+          setToken(String(tokenFromServer))
+          sessionRepo.setUserId(String(serverUser.id), { remember })
+
+          // Let /me hydrate the full user shape.
+          setStatus('loading')
+          return
+        }
+        last = { status: r.status, raw }
+        if (r.status === 404) continue
+        const code = typeof raw?.error === 'string' ? raw.error : `http_${r.status}`
+        throw new Error(`google_login_failed:${code}`)
+      }
+
+      const code = typeof last?.raw?.error === 'string' ? last?.raw?.error : `http_${last?.status ?? 404}`
+      throw new Error(`google_login_failed:${code}`)
     },
-    [USE_API, setUserStable],
+    [USE_API],
   )
 
   const updateProfile = useCallback(
-    (input: {
+    async (input: {
       fullName: string
       phone: string
       email: string
@@ -347,11 +374,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       avatarDataUrl?: string
     }) => {
       if (!user) throw new Error('not_authenticated')
+      if (USE_API) {
+        const patchWithFallback = async (pathA: string, pathB: string, body: unknown) => {
+          try {
+            return await httpApi.patch<any>(pathA, body)
+          } catch (e) {
+            if (e instanceof Error && e.name === 'ApiError' && (e as any).status === 404) {
+              return await httpApi.patch<any>(pathB, body)
+            }
+            throw e
+          }
+        }
+
+        await patchWithFallback('/me', '/users/me', {
+          fullName: input.fullName,
+          phone: input.phone,
+          email: input.email,
+          company: input.company,
+          socials: input.socials,
+          avatarDataUrl: input.avatarDataUrl,
+        })
+
+        const raw = await httpApi.get<any>('/me')
+        if (raw && typeof raw === 'object' && (raw as any).authenticated === false) throw new Error('unauthenticated')
+        const me = (raw && typeof raw === 'object' && 'user' in raw ? (raw as any).user : raw) as any
+        if (!me?.id) throw new Error('me_invalid')
+        const u = userRepo.upsertFromServer({
+          id: String(me.id),
+          role: me.role,
+          fullName: me.fullName ?? '',
+          email: me.email ?? '',
+          phone: me.phone ?? '',
+          company: me.company ?? undefined,
+          socials: me.socials ?? undefined,
+          avatarDataUrl: me.avatarDataUrl ?? undefined,
+          telegramUserId: me.telegramUserId ?? null,
+          emailVerified: true,
+        })
+        sessionRepo.setUserId(u.id, { remember: true })
+        if (u.telegramUserId) sessionRepo.setTelegramUserId(String(u.telegramUserId), { remember: true })
+        setUserStable(u)
+        return
+      }
+
       userRepo.updateProfile(user.id, input)
       const u = userRepo.getById(user.id)
       setUserStable(u)
     },
-    [user, setUserStable],
+    [USE_API, user, setUserStable],
   )
 
   const api = useMemo(
@@ -362,12 +432,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signUp,
       signIn,
       signInWithTelegram,
+      signInWithGoogle,
       chooseRole,
       signOut,
-      switchUser,
       updateProfile,
     }),
-    [user, status, signUp, signIn, signInWithTelegram, chooseRole, signOut, switchUser, updateProfile],
+    [user, status, signUp, signIn, signInWithTelegram, signInWithGoogle, chooseRole, signOut, updateProfile],
   )
 
   return <AuthContext.Provider value={api}>{children}</AuthContext.Provider>

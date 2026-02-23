@@ -177,6 +177,20 @@ export const userRepo = {
     return passwordHash === user.passwordHash ? user : null
   },
 
+  async setPasswordByEmail(email: string, newPassword: string): Promise<void> {
+    const e = normalizeEmail(email)
+    const users = readAll()
+    const idx = users.findIndex((u) => u.email.toLowerCase() === e)
+    if (idx === -1) throw new Error('user_not_found')
+    const now = new Date().toISOString()
+    users[idx] = {
+      ...users[idx],
+      passwordHash: await sha256Base64(newPassword),
+      updatedAt: now,
+    }
+    writeAll(users)
+  },
+
   createVerifiedFromPending(pending: {
     role: UserRole
     fullName: string

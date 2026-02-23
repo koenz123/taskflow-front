@@ -63,15 +63,93 @@
   width: 100%;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: var(--card2);
+  background: var(--surface1);
   color: inherit;
   padding: 10px 12px;
   outline: none;
 }
 
 .authInput:focus {
-  border-color: var(--border3);
-  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.18);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  box-shadow: 0 0 0 4px var(--ring);
+}
+
+.authPhoneControl {
+  width: 100%;
+  display: flex;
+  align-items: stretch;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  overflow: hidden;
+}
+
+.authPhoneControl:focus-within {
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  box-shadow: 0 0 0 4px var(--ring);
+}
+
+.authPhoneControl__country {
+  min-width: 158px;
+  max-width: 220px;
+  border-right: 1px solid var(--border2);
+  display: flex;
+  align-items: stretch;
+}
+
+.authPhoneControl__country .customSelectContainer {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  gap: 0;
+}
+
+.authPhoneControl__country .customSelectLabel {
+  display: none;
+}
+
+.authPhoneControl__country .customSelectButton {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 10px 12px;
+  height: 100%;
+  min-height: 0;
+}
+
+.authPhoneControl__country .customSelectButton:hover {
+  border-color: transparent;
+  background: rgb(var(--accent-rgb) / 0.06);
+}
+
+.authPhoneControl__country .customSelectButton:focus-visible {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.authPhoneControl__country .customSelectButton--open {
+  border-color: transparent;
+  box-shadow: none;
+  background: rgb(var(--accent-rgb) / 0.08);
+}
+
+.authPhoneControl__country .customSelectValue {
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.authPhoneControl__country .customSelectArrow {
+  opacity: 0.7;
+}
+
+.authPhoneControl__input {
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  padding: 10px 12px;
+  width: 100%;
+  min-width: 0;
 }
 
 .authFieldError {
@@ -114,19 +192,268 @@
 }
 
 .authBtn--primary {
-  background: var(--surface2);
-  border-color: var(--border3);
+  background: var(--accent);
+  border-color: rgb(var(--accent-rgb) / 0.7);
+  color: var(--accent-ink);
 }
 
 .authBtn--primary:hover {
-  background: var(--surface3);
-  border-color: var(--border3);
+  filter: brightness(0.98);
+  background: var(--accent);
+  border-color: rgb(var(--accent-rgb) / 0.9);
 }
 
 .authBtn--google {
   background: transparent;
   border-color: var(--border);
   opacity: 0.95;
+}
+
+.authSocial {
+  margin-top: 6px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--border2);
+  background: var(--surface1);
+}
+
+.authSocialHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.authSocialTitle {
+  font-size: 13px;
+  font-weight: 850;
+  color: var(--text);
+}
+
+.authSocialHint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.authSocialItem {
+  display: flex;
+  justify-content: center;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid var(--border2);
+  background: var(--card2);
+}
+
+/* Make 3rd-party widgets look consistent (outer iframe only). */
+.authSocialItem iframe {
+  border-radius: 999px !important;
+  border: 1px solid var(--border) !important;
+  background: transparent !important;
+  overflow: hidden !important;
+}
+
+.authSocialItem--google iframe {
+  width: min(360px, 100%) !important;
+}
+
+.authSocialItem--telegram {
+  /* Telegram widget has its own intrinsic width; keep it centered */
+  padding-bottom: 2px;
+}
+
+.authTelegramBtnWrap {
+  width: min(420px, 100%);
+  position: relative;
+  display: inline-block;
+}
+
+.authTelegramBtn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(42, 171, 238, 0.55);
+  background: linear-gradient(180deg, rgba(42, 171, 238, 0.92), rgba(35, 154, 216, 0.92));
+  color: #fff;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+}
+
+.authTelegramBtn__icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(0, 0, 0, 0.12);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.authTelegramBtn__text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.2px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.authTelegramBtn__chev {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(0, 0, 0, 0.14);
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  opacity: 0.9;
+}
+
+.authTelegramBtnOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  opacity: 0.001;
+}
+
+.authTelegramBtnOverlay iframe {
+  width: 100% !important;
+  height: 44px !important;
+  border-radius: 999px !important;
+}
+
+.authSocialItem--google {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.authGoogleBtn {
+  width: min(420px, 100%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border2);
+  background:
+    radial-gradient(120% 160% at 16% 0%, rgb(var(--accent-rgb) / 0.14), transparent 64%),
+    var(--card2);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+  text-decoration: none;
+}
+
+.authGoogleBtn:hover {
+  border-color: rgb(var(--accent-rgb) / 0.45);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.22);
+}
+
+.authGoogleBtn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+.authGoogleBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.authGoogleBtn__icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 12px;
+  border: 1px solid var(--border2);
+  background: var(--surface1);
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.authGoogleBtn__text {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0.2px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.authGoogleBtn__chev {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 12px;
+  border: 1px solid var(--border2);
+  background: rgb(var(--accent-rgb) / 0.10);
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  opacity: 0.85;
+}
+
+.authGoogleBtnWrap {
+  width: min(420px, 100%);
+  position: relative;
+  display: inline-block;
+}
+
+.authGoogleBtnVisual {
+  width: 100%;
+  pointer-events: none;
+  position: relative;
+  z-index: 1;
+}
+
+.authGoogleBtnOverlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 2;
+  /* Keep it effectively invisible, but still "present" for some browsers/widgets */
+  opacity: 0.001;
+  pointer-events: auto;
+}
+
+.authGoogleBtnOverlay > div {
+  width: 100%;
+  display: grid;
+  place-items: center;
+}
+
+.authGoogleBtnOverlay iframe {
+  width: 100% !important;
+  height: 44px !important;
+  border-radius: 999px !important;
+  pointer-events: auto !important;
+}
+
+/* Best-effort focus ring when iframe focuses */
+.authGoogleBtnWrap:focus-within .authGoogleBtn {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
 }
 
 .authFooterText {
@@ -158,24 +485,30 @@
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface1);
   color: inherit;
   cursor: pointer;
   font-weight: 750;
 }
 
 .authRoleBtn:hover {
-  border-color: rgba(255, 255, 255, 0.22);
-  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--border3);
+  background: var(--surface2);
 }
 
 .authRoleBtn--active {
-  border-color: rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  background: rgb(var(--accent-rgb) / 0.12);
 }
 
 @media (pointer: coarse) {
   .authInput {
+    min-height: var(--tap);
+    padding: 0 12px;
+  }
+
+  .authPhoneControl__country .customSelectButton,
+  .authPhoneControl__input {
     min-height: var(--tap);
     padding: 0 12px;
   }

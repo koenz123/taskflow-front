@@ -4,14 +4,16 @@ import { paths } from '@/app/router/paths'
 import { useI18n } from '@/shared/i18n/I18nContext'
 import type { TranslationKey } from '@/shared/i18n/translations'
 import { useAuth } from '@/shared/auth/AuthContext'
-import { useDevMode } from '@/shared/dev/devMode'
+import { PHONE_COUNTRIES, findPhoneCountry } from '@/shared/phone/countries'
+import { CustomSelect } from '@/shared/ui/custom-select/CustomSelect'
 
 type Role = 'customer' | 'executor'
 
 type FormState = {
   role: Role
   fullName: string
-  phone: string
+  phoneCountryId: string
+  phoneNational: string
   email: string
   password: string
   passwordConfirm: string
@@ -33,12 +35,43 @@ function isValidPhone(value: string) {
   return digits.length >= 10 && digits.length <= 15
 }
 
+function phoneDigitsOnly(value: string) {
+  return value.replace(/\D/g, '')
+}
+
+function formatE164(dial: string, nationalDigits: string) {
+  const d = phoneDigitsOnly(dial)
+  const n = phoneDigitsOnly(nationalDigits)
+  if (!d) return n ? `+${n}` : ''
+  if (!n) return `+${d}`
+  return `+${d}${n}`
+}
+
+function normalizePhoneNational(input: string, countryId: string) {
+  const c = findPhoneCountry(countryId) ?? PHONE_COUNTRIES[0]
+  const max = c.nationalDigitsExact ?? c.nationalDigitsMax ?? 15
+  const dialDigits = phoneDigitsOnly(c.dial)
+  const digits = phoneDigitsOnly(input)
+  const rest = digits.startsWith(dialDigits) ? digits.slice(dialDigits.length) : digits
+  return rest.slice(0, Math.max(0, max))
+}
+
 function validate(form: FormState, t: (key: TranslationKey) => string): FormErrors {
   const errors: FormErrors = {}
 
   if (!form.fullName.trim()) errors.fullName = t('validation.fullNameRequired')
-  if (!form.phone.trim()) errors.phone = t('validation.phoneRequired')
-  else if (!isValidPhone(form.phone)) errors.phone = t('validation.phoneInvalid')
+  const phoneCountry = findPhoneCountry(form.phoneCountryId) ?? PHONE_COUNTRIES[0]
+  const national = phoneDigitsOnly(form.phoneNational)
+  const max = phoneCountry.nationalDigitsExact ?? phoneCountry.nationalDigitsMax ?? 15
+  const min = phoneCountry.nationalDigitsExact ?? Math.min(10, max)
+  if (!national) errors.phoneNational = t('validation.phoneRequired')
+  else if (!isValidPhone(formatE164(phoneCountry.dial, national)) || national.length > max) {
+    errors.phoneNational = t('validation.phoneInvalid')
+  } else if (phoneCountry.nationalDigitsExact && national.length !== phoneCountry.nationalDigitsExact) {
+    errors.phoneNational = t('validation.phoneInvalid')
+  } else if (!phoneCountry.nationalDigitsExact && national.length < min) {
+    errors.phoneNational = t('validation.phoneInvalid')
+  }
 
   if (!form.email.trim()) errors.email = t('validation.emailRequired')
   else if (!isValidEmail(form.email)) errors.email = t('validation.emailInvalid')
@@ -55,9 +88,8 @@ function validate(form: FormState, t: (key: TranslationKey) => string): FormErro
 }
 
 export function RegisterPage() {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const auth = useAuth()
-  const devMode = useDevMode()
   const navigate = useNavigate()
   const location = useLocation()
   const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
@@ -74,7 +106,8 @@ export function RegisterPage() {
   const [form, setForm] = useState<FormState>({
     role: roleFromQuery ?? 'customer',
     fullName: '',
-    phone: '',
+    phoneCountryId: locale === 'ru' ? 'RU' : 'US',
+    phoneNational: '',
     email: '',
     password: '',
     passwordConfirm: '',
@@ -126,10 +159,12 @@ export function RegisterPage() {
     if (!isValid) return
 
     try {
+      const country = findPhoneCountry(form.phoneCountryId) ?? PHONE_COUNTRIES[0]
+      const phone = formatE164(country.dial, form.phoneNational)
       await auth.signUp({
         role: form.role,
         fullName: form.fullName,
-        phone: form.phone,
+        phone,
         email: form.email,
         company: form.role === 'customer' ? form.company : undefined,
         password: form.password,
@@ -139,12 +174,6 @@ export function RegisterPage() {
         params.set('email', form.email.trim())
         if (backToFromQuery) params.set('backTo', backToFromQuery)
         navigate(`${paths.verifyEmail}?${params.toString()}`, { replace: true })
-        return
-      }
-
-      if (devMode.enabled) {
-        const fallback = form.role === 'executor' ? paths.tasks : paths.customerTasks
-        navigate(backToFromQuery ?? fallback, { replace: true })
         return
       }
 
@@ -221,16 +250,36 @@ export function RegisterPage() {
 
         <label className="authField">
           <span className="authLabel">{t('register.phone')}</span>
-          <input
-            className="authInput"
-            value={form.phone}
-            onChange={(e) => setField('phone', e.target.value)}
-            onBlur={() => setTouched((t) => ({ ...t, phone: true }))}
-            placeholder="+1 555 123 4567"
-            autoComplete="tel"
-            inputMode="tel"
-          />
-          {visibleErrors.phone ? <span className="authFieldError">{visibleErrors.phone}</span> : null}
+          <div className="authPhoneControl">
+            <div className="authPhoneControl__country">
+              <CustomSelect<string>
+                label=""
+                value={form.phoneCountryId}
+                options={PHONE_COUNTRIES.map((c) => ({
+                  value: c.id,
+                  label: `${locale === 'ru' ? c.labelRu : c.labelEn} (${c.dial})`,
+                }))}
+                onChange={(nextId) => {
+                  setForm((prev) => ({
+                    ...prev,
+                    phoneCountryId: nextId,
+                    phoneNational: normalizePhoneNational(prev.phoneNational, nextId),
+                  }))
+                }}
+              />
+            </div>
+
+            <input
+              className="authPhoneControl__input"
+              value={form.phoneNational}
+              onChange={(e) => setField('phoneNational', normalizePhoneNational(e.target.value, form.phoneCountryId))}
+              onBlur={() => setTouched((t) => ({ ...t, phoneNational: true }))}
+              placeholder={locale === 'ru' ? 'Номер телефона' : 'Phone number'}
+              autoComplete="tel"
+              inputMode="tel"
+            />
+          </div>
+          {visibleErrors.phoneNational ? <span className="authFieldError">{visibleErrors.phoneNational}</span> : null}
         </label>
 
         <label className="authField">

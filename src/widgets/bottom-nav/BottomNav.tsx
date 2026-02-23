@@ -9,11 +9,12 @@ import { useApplications } from '@/entities/task/lib/useApplications'
 import { useContracts } from '@/entities/contract/lib/useContracts'
 import { useTaskAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
 import './bottom-nav.css'
+import { Icon, type IconName } from '@/shared/ui/icon/Icon'
 
 type Item = {
   key: string
   path: string
-  icon: string
+  icon: IconName
   label: string
   show: boolean
   badgeCount?: number
@@ -46,21 +47,21 @@ export function BottomNav() {
     {
       key: 'disputes',
       path: paths.disputes,
-      icon: '⚖️',
+      icon: 'gavel',
       label: locale === 'ru' ? 'Споры' : 'Disputes',
       show: auth.user?.role === 'arbiter',
     },
     {
       key: 'tasks-exec',
       path: paths.tasks,
-      icon: '📋',
+      icon: 'clipboard',
       label: t('nav.tasks'),
       show: auth.user?.role === 'executor',
     },
     {
       key: 'my-tasks',
       path: paths.customerTasks,
-      icon: '📝',
+      icon: 'note',
       label: t('nav.myTasks'),
       show: auth.user?.role === 'customer',
       badgeCount: myTasksBadgeCount,
@@ -68,14 +69,14 @@ export function BottomNav() {
     {
       key: 'post-task',
       path: paths.taskCreate,
-      icon: '➕',
+      icon: 'plus',
       label: t('nav.postTask'),
       show: auth.user?.role === 'customer',
     },
     {
       key: 'notifications',
       path: paths.notifications,
-      icon: '🔔',
+      icon: 'bell',
       label: t('notifications.title'),
       show: Boolean(auth.user),
       badgeCount: unreadNotifCount,
@@ -83,7 +84,7 @@ export function BottomNav() {
     {
       key: 'profile',
       path: paths.profile,
-      icon: '👤',
+      icon: 'user',
       label: t('nav.profile'),
       show: Boolean(auth.user) && auth.user?.role !== 'arbiter',
     },
@@ -109,7 +110,7 @@ export function BottomNav() {
           return (
             <Link key={item.key} to={item.path} className={`bottomNav__item${active ? ' bottomNav__item--active' : ''}`}>
               <span className="bottomNav__icon" aria-hidden="true">
-                {item.icon}
+                <Icon name={item.icon} size={18} />
               </span>
               <span className="bottomNav__label">{item.label}</span>
               {badgeText ? (

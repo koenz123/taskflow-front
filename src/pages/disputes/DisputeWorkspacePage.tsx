@@ -27,6 +27,7 @@ import { refreshContracts } from '@/entities/contract/lib/useContracts'
 import { refreshAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
 import { refreshTasks } from '@/entities/task/lib/useTasks'
 import { serverBalanceRepo } from '@/entities/user/lib/serverBalanceRepo'
+import { userIdMatches } from '@/shared/auth/userIdAliases'
 
 const DEV_ARBITER_USER_ID = 'user_dev_arbiter'
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
@@ -164,8 +165,8 @@ export function DisputeWorkspacePage() {
   const isArbiter = Boolean(user.role === 'arbiter' && user.id === participants.arbiterId)
   const allowed = Boolean(dispute && contract && isArbiter)
 
-  const customer = participants.customerId ? users.find((u) => u.id === participants.customerId) ?? null : null
-  const executor = participants.executorId ? users.find((u) => u.id === participants.executorId) ?? null : null
+  const customer = participants.customerId ? users.find((u) => userIdMatches(u, participants.customerId)) ?? null : null
+  const executor = participants.executorId ? users.find((u) => userIdMatches(u, participants.executorId)) ?? null : null
 
   const audit = useAuditLog(dispute?.id ?? null)
   const messages = useDisputeMessages(dispute?.id ?? null)

@@ -99,8 +99,8 @@
 
 .deliverablesRow__btn:hover {
   transform: translateY(-1px);
-  border-color: rgba(124, 58, 237, 0.45);
-  background: rgba(124, 58, 237, 0.12);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  background: rgb(var(--accent-rgb) / 0.12);
 }
 
 .deliverablesRow__btn:disabled {
@@ -114,7 +114,7 @@
   height: 34px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: var(--card2);
+  background: var(--surface1);
   color: var(--text);
   padding: 0 10px;
   text-align: center;
@@ -122,8 +122,9 @@
 
 .deliverablesRow__input:focus {
   outline: none;
-  border-color: rgba(124, 58, 237, 0.5);
-  background: rgba(255, 255, 255, 0.04);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  background: var(--surface1);
+  box-shadow: 0 0 0 4px var(--ring);
 }
 
 .field {
@@ -171,14 +172,14 @@
 
 .executorModeOption:hover {
   transform: translateY(-1px);
-  border-color: rgba(124, 58, 237, 0.55);
-  background: rgba(124, 58, 237, 0.10);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  background: rgb(var(--accent-rgb) / 0.08);
 }
 
 .executorModeOption--active {
-  border-color: rgba(124, 58, 237, 0.85);
-  background: rgba(124, 58, 237, 0.14);
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+  border-color: rgb(var(--accent-rgb) / 0.85);
+  background: rgb(var(--accent-rgb) / 0.12);
+  box-shadow: 0 0 0 3px var(--ring);
 }
 
 .executorModeOption:focus-within {
@@ -192,14 +193,14 @@
 }
 
 :root[data-theme='light'] .executorModeOption:hover {
-  border-color: rgba(124, 58, 237, 0.65);
-  background: rgba(124, 58, 237, 0.10);
+  border-color: rgb(var(--accent-rgb) / 0.7);
+  background: rgb(var(--accent-rgb) / 0.08);
 }
 
 :root[data-theme='light'] .executorModeOption--active {
-  border-color: rgba(124, 58, 237, 0.95);
-  background: rgba(124, 58, 237, 0.12);
-  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.16);
+  border-color: rgb(var(--accent-rgb) / 0.95);
+  background: rgb(var(--accent-rgb) / 0.12);
+  box-shadow: 0 0 0 4px var(--ring);
 }
 
 .executorModeOption__input {
@@ -556,8 +557,8 @@
 
 .field__input:focus,
 .field__textarea:focus {
-  border-color: var(--border3);
-  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.18);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  box-shadow: 0 0 0 4px var(--ring);
 }
 
 .field__error {
@@ -577,13 +578,14 @@
 .primaryBtn {
   height: 44px;
   border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--surface1);
+  border: 1px solid rgb(var(--accent-rgb) / 0.42);
+  background: rgb(var(--accent-rgb) / 0.14);
   color: var(--text);
   padding: 0 16px;
   cursor: pointer;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.25);
-  transition: transform 200ms ease, background-color 200ms ease, border-color 200ms ease, color 200ms ease;
+  box-shadow: none;
+  transition: transform 200ms ease, background-color 200ms ease, border-color 200ms ease, color 200ms ease,
+    box-shadow 200ms ease;
 }
 
 .primaryBtn.primaryBtn--plain {
@@ -599,8 +601,41 @@
 
 .primaryBtn:hover {
   transform: scale(1.03);
-  border-color: var(--border3);
-  background: var(--surface2);
+  border-color: rgb(var(--accent-rgb) / 0.65);
+  background: rgb(var(--accent-rgb) / 0.22);
+  box-shadow: 0 0 0 4px var(--ring);
+}
+
+/* Publish button: "soft accent" primary style (independent of global .primaryBtn). */
+.createTaskPublishBtn {
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid rgb(var(--accent-rgb) / 0.42);
+  background: rgb(var(--accent-rgb) / 0.14);
+  color: var(--text);
+  padding: 0 16px;
+  cursor: pointer;
+  box-shadow: none;
+  transition: transform 200ms ease, background-color 200ms ease, border-color 200ms ease, color 200ms ease,
+    box-shadow 200ms ease;
+}
+
+.createTaskPublishBtn:hover {
+  transform: scale(1.03);
+  border-color: rgb(var(--accent-rgb) / 0.65);
+  background: rgb(var(--accent-rgb) / 0.22);
+  box-shadow: 0 0 0 4px var(--ring);
+}
+
+.createTaskPublishBtn:active {
+  transform: scale(0.98);
+}
+
+.createTaskPublishBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .primaryBtn.primaryBtn--plain:hover {
@@ -617,16 +652,18 @@
   align-items: center;
   padding: 0 12px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background: transparent;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  cursor: pointer;
+  font: inherit;
 }
 
 .secondaryLink:hover {
   opacity: 1;
   text-decoration: none;
   transform: scale(1.03);
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.18);
+  background: var(--surface2);
+  border-color: var(--border3);
 }
 
 @media (max-width: 720px) {
@@ -675,4 +712,113 @@
     transform: none;
     box-shadow: none;
   }
+}
+
+.createTaskConfirmOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: var(--overlay);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.createTaskConfirmModal {
+  width: min(520px, 100%);
+  overflow: hidden;
+  background: var(--bg1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+}
+
+.createTaskConfirmModal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--border2);
+}
+
+.createTaskConfirmModal__title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.createTaskConfirmModal__close {
+  border: none;
+  background: var(--card);
+  color: var(--muted);
+  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  font-size: 20px;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+  display: grid;
+  place-items: center;
+}
+
+.createTaskConfirmModal__close:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.createTaskConfirmModal__body {
+  padding: 16px 22px;
+}
+
+.createTaskConfirmModal__text {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.createTaskConfirmModal__footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 12px 22px 18px;
+  border-top: 1px solid var(--border2);
+}
+
+.createTaskConfirmModal__cancel {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.createTaskConfirmModal__cancel:hover {
+  border-color: var(--border3);
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.createTaskConfirmModal__confirm {
+  border-radius: 10px;
+  border: 1px solid rgb(var(--accent-rgb) / 0.75);
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, filter 150ms ease;
+}
+
+.createTaskConfirmModal__confirm:hover {
+  filter: brightness(0.99);
+  border-color: rgb(var(--accent-rgb) / 0.95);
+  background: var(--accent);
 }

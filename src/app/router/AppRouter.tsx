@@ -59,7 +59,7 @@ export function AppRouter() {
 
       <Route path="/home" element={<Navigate to={paths.home} replace />} />
 
-      {/* Public: home + tasks list can be viewed without auth. */}
+      {/* App shell is shared for ALL in-app routes (prevents sidebar remount flicker). */}
       <Route element={<AppShell />}>
         <Route
           path={paths.home}
@@ -87,135 +87,182 @@ export function AppRouter() {
             )
           }
         />
-      </Route>
-
-      <Route
-        element={
-          <RequireAuth>
-            {auth.status === 'authenticated' && auth.user?.role === 'pending' ? <Navigate to={paths.chooseRole} replace /> : <AppShell />}
-          </RequireAuth>
-        }
-      >
         <Route
           path={paths.profile}
           element={
-            <ProtectedRoute>
-              <ProfilePage />
-            </ProtectedRoute>
+            <RequireAuth>
+              <ProtectedRoute>
+                <ProfilePage />
+              </ProtectedRoute>
+            </RequireAuth>
           }
         />
         <Route
           path={paths.profileEdit}
           element={
-            <ProtectedRoute>
-              <EditProfilePage />
-            </ProtectedRoute>
+            <RequireAuth>
+              <ProtectedRoute>
+                <EditProfilePage />
+              </ProtectedRoute>
+            </RequireAuth>
           }
         />
-        <Route path={paths.reviews} element={<ReviewsPage />} />
+        <Route
+          path={paths.reviews}
+          element={
+            <RequireAuth>
+              <ReviewsPage />
+            </RequireAuth>
+          }
+        />
         <Route
           path={paths.notifications}
           element={
-            <ProtectedRoute>
-              <NotificationsPage />
-            </ProtectedRoute>
+            <RequireAuth>
+              <ProtectedRoute>
+                <NotificationsPage />
+              </ProtectedRoute>
+            </RequireAuth>
           }
         />
         <Route
           path={paths.violations}
           element={
-            <ProtectedRoute>
-              <ViolationsPage />
-            </ProtectedRoute>
+            <RequireAuth>
+              <ProtectedRoute>
+                <ViolationsPage />
+              </ProtectedRoute>
+            </RequireAuth>
           }
         />
         <Route
           path={paths.disputes}
           element={
-            <ProtectedRoute>
-              {isArbiter ? <DisputesInboxPage /> : <Navigate to={paths.profile} replace />}
-            </ProtectedRoute>
+            <RequireAuth>
+              <ProtectedRoute>
+                {isArbiter ? <DisputesInboxPage /> : <Navigate to={paths.profile} replace />}
+              </ProtectedRoute>
+            </RequireAuth>
           }
         />
         <Route
           path={paths.disputeThread}
           element={
-            <ProtectedRoute>
-              <DisputeThreadPage />
-            </ProtectedRoute>
+            <RequireAuth>
+              <ProtectedRoute>
+                <DisputeThreadPage />
+              </ProtectedRoute>
+            </RequireAuth>
           }
         />
-        <Route path={paths.userProfile} element={<PublicProfilePage />} />
-        <Route path={paths.userReviews} element={<ReviewsPage />} />
+        <Route
+          path={paths.userProfile}
+          element={
+            <RequireAuth>
+              <PublicProfilePage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path={paths.userReviews}
+          element={
+            <RequireAuth>
+              <ReviewsPage />
+            </RequireAuth>
+          }
+        />
         <Route
           path={paths.reportProfile}
           element={
-            <ProtectedRoute>
-              <ReportProfilePage />
-            </ProtectedRoute>
+            <RequireAuth>
+              <ProtectedRoute>
+                <ReportProfilePage />
+              </ProtectedRoute>
+            </RequireAuth>
           }
         />
         <Route
           path={paths.customerTasks}
           element={
-            <ProtectedRoute>
-              <CustomerTasksPage />
-            </ProtectedRoute>
+            <RequireAuth>
+              <ProtectedRoute>
+                <CustomerTasksPage />
+              </ProtectedRoute>
+            </RequireAuth>
           }
         />
         <Route
           path={paths.customerArchive}
           element={
-            <ProtectedRoute>
-              <ArchivesPage />
-            </ProtectedRoute>
+            <RequireAuth>
+              <ProtectedRoute>
+                <ArchivesPage />
+              </ProtectedRoute>
+            </RequireAuth>
           }
         />
         <Route
           path={paths.customerReview}
           element={
-            <ProtectedRoute>
-              <CustomerReviewsPage />
-            </ProtectedRoute>
+            <RequireAuth>
+              <ProtectedRoute>
+                <CustomerReviewsPage />
+              </ProtectedRoute>
+            </RequireAuth>
           }
         />
         <Route
           path={paths.customerRequests}
           element={
-            <ProtectedRoute>
-              <CustomerRequestsPage />
-            </ProtectedRoute>
+            <RequireAuth>
+              <ProtectedRoute>
+                <CustomerRequestsPage />
+              </ProtectedRoute>
+            </RequireAuth>
           }
         />
         <Route
           path={paths.taskCreate}
           element={
-            <ProtectedRoute>
-              <CreateTaskPage />
-            </ProtectedRoute>
+            <RequireAuth>
+              <ProtectedRoute>
+                <CreateTaskPage />
+              </ProtectedRoute>
+            </RequireAuth>
           }
         />
         <Route
           path={paths.taskDetails}
           element={
-            <ProtectedRoute>
-              <RequireTasksLoaded>
-                <TaskDetailsPage />
-              </RequireTasksLoaded>
-            </ProtectedRoute>
+            <RequireAuth>
+              <ProtectedRoute>
+                <RequireTasksLoaded>
+                  <TaskDetailsPage />
+                </RequireTasksLoaded>
+              </ProtectedRoute>
+            </RequireAuth>
           }
         />
         <Route
           path={paths.taskEdit}
           element={
-            <ProtectedRoute>
-              <RequireTasksLoaded>
-                <EditTaskPage />
-              </RequireTasksLoaded>
-            </ProtectedRoute>
+            <RequireAuth>
+              <ProtectedRoute>
+                <RequireTasksLoaded>
+                  <EditTaskPage />
+                </RequireTasksLoaded>
+              </ProtectedRoute>
+            </RequireAuth>
           }
         />
-        <Route path={paths.portfolio} element={<PortfolioPage />} />
+        <Route
+          path={paths.portfolio}
+          element={
+            <RequireAuth>
+              <PortfolioPage />
+            </RequireAuth>
+          }
+        />
 
         <Route path={paths.notFound} element={<NotFoundPage />} />
       </Route>

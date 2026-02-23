@@ -14,6 +14,8 @@ import { useToast } from '@/shared/ui/toast/ToastProvider'
 import { notifyToTelegramAndUi } from '@/shared/notify/notify'
 import { ApiError, api } from '@/shared/api/api'
 import { refreshNotifications } from '@/entities/notification/lib/useNotifications'
+import { userIdMatches } from '@/shared/auth/userIdAliases'
+import { Icon } from '@/shared/ui/icon/Icon'
 
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
@@ -121,7 +123,7 @@ export function CustomerRequestsPage() {
             <ul className="customerTasksList">
               {pauseRequests.map((req) => {
                 const task = tasks.find((x) => x.id === req.taskId) ?? null
-                const executor = users.find((u) => u.id === req.executorId) ?? null
+                const executor = users.find((u) => userIdMatches(u, req.executorId)) ?? null
                 const requestedAt = req.pauseRequestedAt ?? req.assignedAt
                 const durationMs = req.pauseRequestedDurationMs ?? 0
                 const durationHours = durationMs ? Math.round(durationMs / (60 * 60 * 1000)) : null
@@ -144,7 +146,8 @@ export function CustomerRequestsPage() {
 
                       <div className="customerTasksItemBadges">
                         <span className="customerTasksItemBadge">
-                          ⏸️ {locale === 'ru' ? 'Запрос' : 'Request'}: {new Date(requestedAt).toLocaleString()}
+                          <Icon name="pause" size={16} className="iconInline" />
+                          {locale === 'ru' ? 'Запрос' : 'Request'}: {new Date(requestedAt).toLocaleString()}
                         </span>
                         {durationHours !== null ? (
                           <span className="customerTasksItemBadge" style={{ opacity: 0.85 }}>
@@ -218,8 +221,7 @@ export function CustomerRequestsPage() {
                       </button>
                       <button
                         type="button"
-                        className="customerTasksApplicationsBtn"
-                        style={{ opacity: 0.9 }}
+                        className="customerTasksApplicationsBtn customerTasksApplicationsBtn--neutral"
                         disabled={isBusy(req.id) || isDone(req.id)}
                         onClick={() => {
                           if (isBusy(req.id) || isDone(req.id)) return

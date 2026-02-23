@@ -35,7 +35,7 @@
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  color: rgba(124, 58, 237, 0.8);
+  color: var(--accent);
   font-weight: 700;
 }
 
@@ -71,7 +71,7 @@
 }
 
 .addWorksModal__close:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface2);
   color: var(--text);
 }
 
@@ -155,7 +155,7 @@
 }
 
 .addWorksModal__empty {
-  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border: 1px dashed var(--border);
   padding: 18px;
   border-radius: 14px;
   text-align: center;
@@ -171,8 +171,9 @@
 
 .addWorksCard {
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border2);
+  background: var(--card2);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
   display: grid;
   grid-template-columns: 160px minmax(0, 1fr);
@@ -180,13 +181,13 @@
 }
 
 .addWorksCard--done {
-  border-color: rgba(124, 58, 237, 0.35);
-  box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.08) inset;
+  border-color: rgb(var(--accent-rgb) / 0.45);
+  box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.12) inset, var(--shadow-sm);
 }
 
 .addWorksCard__media {
   background: rgba(0, 0, 0, 0.35);
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-right: 1px solid var(--border2);
   display: grid;
   place-items: center;
   position: relative;
@@ -233,7 +234,7 @@
 .addWorksCard__textarea {
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--card2);
+  background: var(--surface1);
   color: var(--text);
   padding: 10px 12px;
   font-size: 13px;
@@ -250,7 +251,8 @@
 
 .addWorksCard__input:focus,
 .addWorksCard__textarea:focus {
-  border-color: rgba(124, 58, 237, 0.55);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  box-shadow: 0 0 0 4px var(--ring);
 }
 
 .addWorksCard__fileName {
@@ -320,15 +322,15 @@
 }
 
 .addWorksModal__cancel:hover {
-  border-color: rgba(255, 255, 255, 0.22);
-  background: var(--card2);
+  border-color: var(--border3);
+  background: var(--surface2);
 }
 
 .addWorksModal__submit {
   border-radius: 10px;
-  border: 1px solid rgba(124, 58, 237, 0.65);
-  background: rgba(124, 58, 237, 0.18);
-  color: var(--text);
+  border: 1px solid rgb(var(--accent-rgb) / 0.75);
+  background: var(--accent);
+  color: var(--accent-ink);
   padding: 10px 18px;
   font-size: 13px;
   font-weight: 750;
@@ -337,8 +339,9 @@
 }
 
 .addWorksModal__submit:hover {
-  background: rgba(124, 58, 237, 0.28);
-  border-color: rgba(124, 58, 237, 0.9);
+  filter: brightness(0.99);
+  background: var(--accent);
+  border-color: rgb(var(--accent-rgb) / 0.95);
 }
 
 .addWorksModal__submit:disabled {
@@ -347,8 +350,9 @@
 }
 
 .addWorksModal__submit:disabled:hover {
-  background: rgba(124, 58, 237, 0.18);
-  border-color: rgba(124, 58, 237, 0.65);
+  background: var(--accent);
+  border-color: rgb(var(--accent-rgb) / 0.75);
+  filter: none;
 }
 
 .addWorksModal__progress {
@@ -359,8 +363,8 @@
 
 .addWorksLinkBlock {
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border2);
+  background: var(--card2);
   padding: 12px;
   display: grid;
   gap: 10px;
@@ -425,7 +429,8 @@
 
 .addWorksLinkBlock__input:focus,
 .addWorksLinkBlock__textarea:focus {
-  border-color: rgba(124, 58, 237, 0.55);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  box-shadow: 0 0 0 4px var(--ring);
 }
 
 .addWorksLinkBlock__type {
@@ -441,8 +446,8 @@
 
 .addWorksLinkBlock__typeBtn {
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  background: var(--surface1);
   color: var(--text);
   padding: 10px 12px;
   font-size: 13px;
@@ -452,13 +457,13 @@
 }
 
 .addWorksLinkBlock__typeBtn:hover {
-  border-color: rgba(255, 255, 255, 0.26);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border3);
+  background: var(--surface2);
 }
 
 .addWorksLinkBlock__typeBtn--active {
-  border-color: rgba(124, 58, 237, 0.75);
-  background: rgba(124, 58, 237, 0.18);
+  border-color: rgb(var(--accent-rgb) / 0.75);
+  background: rgb(var(--accent-rgb) / 0.14);
 }
 
 .addWorksLinkBlock__typeBtn:disabled {

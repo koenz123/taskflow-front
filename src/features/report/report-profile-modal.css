@@ -75,7 +75,7 @@
   font-size: 18px;
   font-weight: 600;
   line-height: 1.3;
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--text);
 }
 
 .reportModal__close {
@@ -94,7 +94,7 @@
 }
 
 .reportModal__close:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface2);
   color: var(--text);
 }
 
@@ -172,8 +172,8 @@
 }
 
 .reportModal__category--active {
-  border-color: rgba(124, 58, 237, 0.5);
-  background: rgba(124, 58, 237, 0.08);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  background: rgb(var(--accent-rgb) / 0.08);
 }
 
 .reportModal__category__emoji {
@@ -224,8 +224,8 @@
 
 .reportModal__reason--checked,
 .reportModal__reason:has(input:checked) {
-  border-color: rgba(124, 58, 237, 0.5);
-  background: rgba(124, 58, 237, 0.08);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  background: rgb(var(--accent-rgb) / 0.08);
 }
 
 .reportModal__reason input[type="radio"] {
@@ -242,7 +242,7 @@
 }
 
 .reportModal__reason input[type="radio"]:checked {
-  border-color: rgba(124, 58, 237, 0.8);
+  border-color: rgb(var(--accent-rgb) / 0.85);
 }
 
 .reportModal__reason input[type="radio"]:checked::before {
@@ -250,14 +250,14 @@
   position: absolute;
   inset: 3px;
   border-radius: 50%;
-  background: rgba(124, 58, 237, 0.9);
+  background: var(--accent);
 }
 
 .reportModal__detail {
   width: 100%;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--card2);
+  background: var(--surface1);
   color: var(--text);
   padding: 12px;
   font-size: 13px;
@@ -269,12 +269,13 @@
 }
 
 .reportModal__detail::placeholder {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--muted2);
 }
 
 .reportModal__detail:focus {
   outline: none;
-  border-color: rgba(124, 58, 237, 0.5);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  box-shadow: 0 0 0 4px var(--ring);
 }
 
 .reportModal__footer {
@@ -298,8 +299,8 @@
 }
 
 .reportModal__cancel:hover {
-  border-color: rgba(255, 255, 255, 0.22);
-  background: var(--card2);
+  border-color: var(--border3);
+  background: var(--surface2);
 }
 
 .reportModal__submit {

@@ -15,6 +15,7 @@ import { auditLogRepo } from '@/entities/auditLog/lib/auditLogRepo'
 import './dispute-thread.css'
 import { DisputeWorkspacePage } from './DisputeWorkspacePage'
 import { refreshNotifications } from '@/entities/notification/lib/useNotifications'
+import { userIdMatches } from '@/shared/auth/userIdAliases'
 
 const DEV_ARBITER_USER_ID = 'user_dev_arbiter'
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
@@ -77,8 +78,8 @@ export function DisputeThreadPage() {
 
   const allowed = useMemo(() => {
     if (!dispute || !contract) return false
-    if (user.id === participants.customerId) return true
-    if (user.id === participants.executorId) return true
+    if (participants.customerId && userIdMatches(user, participants.customerId)) return true
+    if (participants.executorId && userIdMatches(user, participants.executorId)) return true
     if (user.role === 'arbiter' && user.id === participants.arbiterId) return true
     return false
   }, [contract, dispute, participants.arbiterId, participants.customerId, participants.executorId, user.id, user.role])
@@ -99,8 +100,8 @@ export function DisputeThreadPage() {
 
   const taskTitle = task ? pickText(task.title, locale) : contract?.taskId ?? dispute?.contractId ?? ''
 
-  const customer = participants.customerId ? users.find((u) => u.id === participants.customerId) ?? null : null
-  const executor = participants.executorId ? users.find((u) => u.id === participants.executorId) ?? null : null
+  const customer = participants.customerId ? users.find((u) => userIdMatches(u, participants.customerId)) ?? null : null
+  const executor = participants.executorId ? users.find((u) => userIdMatches(u, participants.executorId)) ?? null : null
   const arbiter = users.find((u) => u.id === participants.arbiterId) ?? null
 
   useEffect(() => {

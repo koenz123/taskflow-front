@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { paths, taskDetailsPath, userProfilePath } from '@/app/router/paths'
 import { useAuth } from '@/shared/auth/AuthContext'
 import { useI18n } from '@/shared/i18n/I18nContext'
+import { executorIdAliases } from '@/shared/auth/userIdAliases'
 import { refreshTasks, useTasks } from '@/entities/task/lib/useTasks'
 import { pickText } from '@/entities/task/lib/taskText'
 import { SocialLinks } from '@/shared/social/SocialLinks'
@@ -19,6 +20,7 @@ import { useNotifications } from '@/entities/notification/lib/useNotifications'
 import { contractRepo } from '@/entities/contract/lib/contractRepo'
 import { refreshContracts, useContracts } from '@/entities/contract/lib/useContracts'
 import { fileToAvatarDataUrl } from '@/shared/lib/image'
+import { uploadFileToServer } from '@/shared/api/uploads'
 import {
   fetchApplicationsForTask,
   refreshApplications,
@@ -42,7 +44,6 @@ import { Pagination } from '@/shared/ui/pagination/Pagination'
 import './profile.css'
 import { previewMetaList } from '@/shared/lib/metaList'
 import { StatusPill, type StatusTone } from '@/shared/ui/status-pill/StatusPill'
-import { useDevMode } from '@/shared/dev/devMode'
 import { useExecutorViolations } from '@/entities/executorSanction/lib/useExecutorViolations'
 import { useDisputes } from '@/entities/dispute/lib/useDisputes'
 import { disputeRepo } from '@/entities/dispute/lib/disputeRepo'
@@ -51,6 +52,7 @@ import { HelpTip } from '@/shared/ui/help-tip/HelpTip'
 import { notifyToTelegramAndUi } from '@/shared/notify/notify'
 import { ApiError, api } from '@/shared/api/api'
 import { refreshNotifications } from '@/entities/notification/lib/useNotifications'
+import { Icon } from '@/shared/ui/icon/Icon'
 
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
@@ -71,7 +73,6 @@ export function ProfilePage() {
   const toast = useToast()
   const telegramUserId = auth.user?.telegramUserId ?? null
   const toastUi = (msg: string, tone?: 'success' | 'info' | 'error') => toast.showToast({ message: msg, tone })
-  const devMode = useDevMode()
   const [searchParams] = useSearchParams()
   const tasks = useTasks()
   const users = useUsers()
@@ -80,8 +81,6 @@ export function ProfilePage() {
   const MY_TASKS_PAGE_SIZE = 20
   const [nowMs, setNowMs] = useState(() => Date.now())
   const [avatarBusy, setAvatarBusy] = useState(false)
-  const [isSwitchOpen, setIsSwitchOpen] = useState(false)
-  const switchRef = useRef<HTMLDivElement | null>(null)
   const applications = useApplications()
   const disputes = useDisputes()
   const notifications = useNotifications(auth.user?.id ?? null)
@@ -291,37 +290,10 @@ export function ProfilePage() {
     setWithdrawMessage(t('profile.balance.withdrawSuccess'))
   }
 
-  const currentUserLabel = useMemo(() => {
-    const u = users.find((x) => x.id === auth.user?.id) ?? auth.user
-    if (!u) return ''
-    return `${u.email} (${u.role})`
-  }, [users, auth.user])
-
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 30_000)
     return () => window.clearInterval(id)
   }, [])
-
-  useEffect(() => {
-    if (!isSwitchOpen) return
-
-    const onPointerDown = (e: PointerEvent) => {
-      const el = switchRef.current
-      if (!el) return
-      if (e.target instanceof Node && !el.contains(e.target)) setIsSwitchOpen(false)
-    }
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsSwitchOpen(false)
-    }
-
-    window.addEventListener('pointerdown', onPointerDown)
-    window.addEventListener('keydown', onKeyDown)
-    return () => {
-      window.removeEventListener('pointerdown', onPointerDown)
-      window.removeEventListener('keydown', onKeyDown)
-    }
-  }, [isSwitchOpen])
 
   useEffect(() => {
     if (!openList) return
@@ -336,6 +308,10 @@ export function ProfilePage() {
   const ratings = useRatings()
   const adjustments = useRatingAdjustments()
   const taskAssignments = useTaskAssignments()
+  const executorIdSet = useMemo(() => {
+    if (!user || user.role !== 'executor') return new Set<string>()
+    return new Set(executorIdAliases(user))
+  }, [user?.id, user?.role, user?.telegramUserId])
   const pauseByTaskId = useMemo(() => {
     const map = new Map<string, 'paused' | 'pause_requested'>()
     for (const a of taskAssignments) {
@@ -355,18 +331,22 @@ export function ProfilePage() {
     return set
   }, [taskAssignments])
   const posted = user ? tasks.filter((x) => x.createdByUserId === user.id && x.status !== 'archived') : []
-  const assignedTasks = user ? tasks.filter((x) => x.assignedExecutorIds.includes(user.id)) : []
+  const assignedTasks = user
+    ? user.role === 'executor'
+      ? tasks.filter((x) => x.assignedExecutorIds.some((eid) => executorIdSet.has(String(eid))))
+      : tasks.filter((x) => x.assignedExecutorIds.includes(user.id))
+    : []
 
   const myAssignmentByTaskId = useMemo(() => {
     const map = new Map<string, (typeof taskAssignments)[number]>()
     if (!user || user.role !== 'executor') return map
     for (const a of taskAssignments) {
-      if (a.executorId !== user.id) continue
+      if (!executorIdSet.has(String(a.executorId))) continue
       const prev = map.get(a.taskId)
       if (!prev || a.assignedAt.localeCompare(prev.assignedAt) > 0) map.set(a.taskId, a)
     }
     return map
-  }, [taskAssignments, user])
+  }, [executorIdSet, taskAssignments, user])
 
   const isUncompletedAssignmentStatus = (status: string | undefined | null) => {
     return status === 'overdue' || status === 'removed_auto' || status === 'cancelled_by_customer' || status === 'dispute_opened'
@@ -390,7 +370,7 @@ export function ProfilePage() {
   const uncompleted = useMemo(() => {
     if (!user || user.role !== 'executor') return [] as typeof tasks
     const list = taskAssignments
-      .filter((a) => a.executorId === user.id && isUncompletedAssignmentStatus(a.status))
+      .filter((a) => executorIdSet.has(String(a.executorId)) && isUncompletedAssignmentStatus(a.status))
       .slice()
       .sort((a, b) => b.assignedAt.localeCompare(a.assignedAt))
     const seen = new Set<string>()
@@ -402,7 +382,7 @@ export function ProfilePage() {
       if (task) out.push(task)
     }
     return out
-  }, [taskAssignments, tasks, user])
+  }, [executorIdSet, taskAssignments, tasks, user])
 
   const postedMy = posted.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   const myActive = taken.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -425,12 +405,12 @@ export function ProfilePage() {
     // - revision requested by customer (contract.status === 'revision_requested')
     // It must change after clicking "Start work" and after revision requests.
     return myActive.filter((task) => {
-      const a = taskAssignments.find((ta) => ta.taskId === task.id && ta.executorId === user.id) ?? null
+      const a = taskAssignments.find((ta) => ta.taskId === task.id && executorIdSet.has(String(ta.executorId))) ?? null
       if (a?.status === 'pending_start') return true
-      const c = contracts.find((x) => x.taskId === task.id && x.executorId === user.id) ?? null
+      const c = contracts.find((x) => x.taskId === task.id && executorIdSet.has(String(x.executorId))) ?? null
       return c?.status === 'revision_requested'
     }).length
-  }, [contracts, myActive, taskAssignments, user])
+  }, [contracts, executorIdSet, myActive, taskAssignments, user])
 
   const disputeUnreadCount = useMemo(() => {
     if (!user) return 0
@@ -459,11 +439,11 @@ export function ProfilePage() {
       .filter((d) => {
         const c = contractById.get(d.contractId) ?? null
         if (!c) return false
-        return user.role === 'customer' ? c.clientId === user.id : c.executorId === user.id
+        return user.role === 'customer' ? c.clientId === user.id : executorIdSet.has(String(c.executorId))
       })
       .slice()
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-  }, [contracts, disputes, user])
+  }, [contracts, disputes, executorIdSet, user])
 
   // (avg time left UI removed)
 
@@ -733,57 +713,10 @@ export function ProfilePage() {
         <section className="profileMain">
           <header className="profileTopbar">
             <div className="profileTopbar__left">
-              {devMode.enabled && !USE_API ? (
-                <div className="profileSelectWrap" ref={switchRef}>
-                  <button
-                    type="button"
-                    className="profileSelectBtn"
-                    aria-haspopup="menu"
-                    aria-expanded={isSwitchOpen}
-                    onClick={() => setIsSwitchOpen((v) => !v)}
-                    title={t('account.switch')}
-                  >
-                    <span className="profileSelectValue">{currentUserLabel}</span>
-                    <span className="profileSelectChevron" aria-hidden="true">
-                      ▾
-                    </span>
-                  </button>
-
-                  {isSwitchOpen ? (
-                    <div className="profileSelectMenu" role="menu" aria-label={t('account.switch')}>
-                      {users.map((u) => {
-                        const active = u.id === auth.user?.id
-                        return (
-                          <button
-                            key={u.id}
-                            type="button"
-                            role="menuitem"
-                            className={`profileSelectItem${active ? ' profileSelectItem--active' : ''}`}
-                            onClick={() => {
-                              auth.switchUser(u.id)
-                              setIsSwitchOpen(false)
-                            }}
-                          >
-                            <span className="profileSelectItemText">
-                              {u.email} ({u.role})
-                            </span>
-                            {active ? <span className="profileSelectItemMark">✓</span> : null}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
 
             <div className="profileTopbar__right">
               <div className="profileTopbar__actions">
-                {devMode.enabled && !USE_API ? (
-                  <Link className="profileBtn" to={paths.register}>
-                    {t('account.add')}
-                  </Link>
-                ) : null}
                 <Link className="profileBtn" to={paths.profileEdit}>
                   {t('profile.edit')}
                 </Link>
@@ -808,15 +741,9 @@ export function ProfilePage() {
                     to={paths.reviews}
                     state={{ backTo: paths.profile }}
                   >
-                    {locale === 'ru'
-                      ? `★ ${ratingSummary.avg.toFixed(1)} (${ratingSummary.count})`
-                      : `★ ${ratingSummary.avg.toFixed(1)} (${ratingSummary.count})`}
+                    <Icon name="star" size={16} className="iconInline" />
+                    {ratingSummary.avg.toFixed(1)} ({ratingSummary.count})
                   </Link>
-                ) : null}
-                {devMode.enabled && user.role === 'executor' ? (
-                  <div className="profileTopbar__sub" style={{ opacity: 0.85 }}>
-                    {t('profile.executorIdLabel')}: {user.id}
-                  </div>
                 ) : null}
                 </div>
             <label className="profileAvatar profileAvatarUpload" title={t('profile.avatar.hint')}>
@@ -831,8 +758,11 @@ export function ProfilePage() {
                   void (async () => {
                     setAvatarBusy(true)
                     try {
-                      const avatarDataUrl = await fileToAvatarDataUrl(file, 160)
-                      auth.updateProfile({
+                      const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
+                      const avatarDataUrl = USE_API
+                        ? (await uploadFileToServer(file, file.name)).url
+                        : await fileToAvatarDataUrl(file, 160)
+                      await auth.updateProfile({
                         fullName: user.fullName,
                         phone: user.phone,
                         email: user.email,
@@ -857,7 +787,7 @@ export function ProfilePage() {
               <div className="profileAvatarOverlay" aria-label={t('profile.avatar.upload')}>
                 {avatarBusy ? (
                   <span className="profileAvatarOverlayIcon" aria-hidden="true">
-                    ⏳
+                    <Icon name="hourglass" size={18} />
                   </span>
                 ) : (
                   <svg
@@ -982,30 +912,36 @@ export function ProfilePage() {
 
                             <div className="customerTasksItemBadges">
                               <span className="customerTasksItemBadge">
-                                🗓️ {t('tasks.published')}: {timeAgo(task.createdAt, locale, nowMs)}
+                                <Icon name="calendar" size={16} className="iconInline" />
+                                {t('tasks.published')}: {timeAgo(task.createdAt, locale, nowMs)}
                               </span>
                               {task.status !== 'closed' && task.dueDate ? (
                                 <span className="customerTasksItemBadge">
-                                  📅 {t('tasks.due')}: {task.dueDate}
+                                  <Icon name="calendar" size={16} className="iconInline" />
+                                  {t('tasks.due')}: {task.dueDate}
                                 </span>
                               ) : null}
                               {previewMetaList(task.category, 3) ? (
                                 <span className="customerTasksItemBadge" style={{ whiteSpace: 'normal' }}>
-                                  📱 {t('task.create.category')}: {previewMetaList(task.category, 3)}
+                                  <Icon name="phone" size={16} className="iconInline" />
+                                  {t('task.create.category')}: {previewMetaList(task.category, 3)}
                                 </span>
                               ) : null}
                               {previewMetaList(task.location, 3) ? (
                                 <span className="customerTasksItemBadge" style={{ whiteSpace: 'normal' }}>
-                                  🎞️ {t('task.create.location')}: {previewMetaList(task.location, 3)}
+                                  <Icon name="film" size={16} className="iconInline" />
+                                  {t('task.create.location')}: {previewMetaList(task.location, 3)}
                                 </span>
                               ) : null}
                               <span className="customerTasksItemBadge">
-                                👥 {t('task.meta.assigned')}: {task.assignedExecutorIds.length}/{task.maxExecutors ?? 1}
+                                <Icon name="users" size={16} className="iconInline" />
+                                {t('task.meta.assigned')}: {task.assignedExecutorIds.length}/{task.maxExecutors ?? 1}
                               </span>
                               {task.completionVideoUrl ? (
                                 <span className="customerTasksItemBadge customerTasksItemBadge--link">
                                   <a href={task.completionVideoUrl} target="_blank" rel="noreferrer">
-                                    🎬 {t('task.completionLink')}
+                                    <Icon name="film" size={16} className="iconInline" />
+                                    {t('task.completionLink')}
                                   </a>
                                 </span>
                               ) : null}
@@ -1273,17 +1209,20 @@ export function ProfilePage() {
 
                             <div className="customerTasksItemBadges">
                               <span className="customerTasksItemBadge">
-                                ⚖️ {locale === 'ru' ? 'Статус' : 'Status'}: {disputeStatusLabel(d.status)}
+                                <Icon name="gavel" size={16} className="iconInline" />
+                                {locale === 'ru' ? 'Статус' : 'Status'}: {disputeStatusLabel(d.status)}
                               </span>
                               <span className="customerTasksItemBadge">
-                                🕓 {locale === 'ru' ? 'Обновлено' : 'Updated'}: {updated}
+                                <Icon name="clock" size={16} className="iconInline" />
+                                {locale === 'ru' ? 'Обновлено' : 'Updated'}: {updated}
                               </span>
                               <span className="customerTasksItemBadge">
                                 {locale === 'ru' ? 'Открыл' : 'Opened by'}: {openedBy?.fullName ?? d.openedByUserId}
                               </span>
                               {unread ? (
                                 <span className="customerTasksItemBadge">
-                                  🔔 {locale === 'ru' ? 'Новых' : 'Unread'}: {unread > 99 ? '99+' : unread}
+                                  <Icon name="bell" size={16} className="iconInline" />
+                                  {locale === 'ru' ? 'Новых' : 'Unread'}: {unread > 99 ? '99+' : unread}
                                 </span>
                               ) : null}
                             </div>
@@ -1317,7 +1256,7 @@ export function ProfilePage() {
                   <ul className="customerTasksList">
                     {myActive.slice(0, MAX_PREVIEW).map((task) => {
                       const a =
-                        taskAssignments.find((ta) => ta.taskId === task.id && ta.executorId === user.id) ?? null
+                        taskAssignments.find((ta) => ta.taskId === task.id && executorIdSet.has(String(ta.executorId))) ?? null
                       const startLeft = a ? timeLeftMs(a.startDeadlineAt, nowMs) : null
                       const execLeft = a?.executionDeadlineAt ? timeLeftMs(a.executionDeadlineAt, nowMs) : null
 
@@ -1381,11 +1320,13 @@ export function ProfilePage() {
 
                             <div className="customerTasksItemBadges">
                               <span className="customerTasksItemBadge">
-                                🗓️ {t('tasks.published')}: {timeAgo(task.createdAt, locale, nowMs)}
+                                <Icon name="calendar" size={16} className="iconInline" />
+                                {t('tasks.published')}: {timeAgo(task.createdAt, locale, nowMs)}
                               </span>
                               {task.status !== 'closed' && task.dueDate ? (
                                 <span className="customerTasksItemBadge">
-                                  📅 {t('tasks.due')}: {task.dueDate}
+                                  <Icon name="calendar" size={16} className="iconInline" />
+                                  {t('tasks.due')}: {task.dueDate}
                                 </span>
                               ) : null}
                               {a?.status === 'pending_start' && startLeft !== null ? (

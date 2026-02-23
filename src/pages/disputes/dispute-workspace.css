@@ -235,8 +235,8 @@
 }
 
 .disputeWsMsg.isInternal {
-  border-color: rgba(124, 58, 237, 0.35);
-  background: rgba(124, 58, 237, 0.10);
+  border-color: rgb(var(--accent-rgb) / 0.38);
+  background: rgb(var(--accent-rgb) / 0.08);
 }
 
 .disputeWsMsg.isSystem {
@@ -312,8 +312,9 @@
 }
 
 .disputeWsBtn--primary {
-  border-color: rgba(124, 58, 237, 0.55);
-  background: rgba(124, 58, 237, 0.18);
+  border-color: rgb(var(--accent-rgb) / 0.75);
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 
 .disputeWsField {
@@ -352,7 +353,7 @@
 
 .disputeWsField .customSelectButton:focus-visible {
   border-color: var(--border3);
-  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.12);
+  box-shadow: 0 0 0 4px var(--ring);
 }
 
 .disputeWsTextarea {
@@ -362,8 +363,8 @@
 .disputeWsSelect:focus,
 .disputeWsInput:focus,
 .disputeWsTextarea:focus {
-  border-color: var(--border3);
-  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.12);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  box-shadow: 0 0 0 4px var(--ring);
 }
 
 .disputeWsGrid2 {

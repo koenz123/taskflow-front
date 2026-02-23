@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { disputeThreadPath, paths, taskDetailsPath, userProfilePath } from '@/app/router/paths'
 import { useAuth } from '@/shared/auth/AuthContext'
@@ -13,14 +13,14 @@ import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import { useContracts } from '@/entities/contract/lib/useContracts'
 import { contractRepo } from '@/entities/contract/lib/contractRepo'
 import { useSubmissions } from '@/entities/submission/lib/useSubmissions'
+import type { Submission } from '@/entities/submission/model/submission'
+import { submissionRepo } from '@/entities/submission/lib/submissionRepo'
 import { useDisputes } from '@/entities/dispute/lib/useDisputes'
 import { disputeRepo } from '@/entities/dispute/lib/disputeRepo'
-import { useDevMode } from '@/shared/dev/devMode'
 import { RatingModal } from '@/features/rating/RatingModal'
 import { createRatingApi, refreshRatings } from '@/entities/rating/lib/useRatings'
 import { ratingRepo } from '@/entities/rating/lib/ratingRepo'
 import { RevisionRequestModal } from '@/features/revision/RevisionRequestModal'
-import { disputeArbitrationService } from '@/shared/services/disputeArbitrationService'
 import './profile.css'
 import { taskAssignmentRepo } from '@/entities/taskAssignment/lib/taskAssignmentRepo'
 import { useTaskAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
@@ -31,6 +31,8 @@ import { refreshContracts } from '@/entities/contract/lib/useContracts'
 import { refreshAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
 import { refreshTasks } from '@/entities/task/lib/useTasks'
 import { refreshNotifications } from '@/entities/notification/lib/useNotifications'
+import { userIdAliases, userIdMatches } from '@/shared/auth/userIdAliases'
+import { Icon } from '@/shared/ui/icon/Icon'
 
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
@@ -38,7 +40,6 @@ export function CustomerReviewsPage() {
   const { t, locale } = useI18n()
   const auth = useAuth()
   const user = auth.user!
-  const devMode = useDevMode()
   const navigate = useNavigate()
   const tasks = useTasks()
   const users = useUsers()
@@ -49,6 +50,8 @@ export function CustomerReviewsPage() {
   const [ratingContractId, setRatingContractId] = useState<string | null>(null)
   const [revisionModalContractId, setRevisionModalContractId] = useState<string | null>(null)
   const [blockedModal, setBlockedModal] = useState<null | { title: string; message: string }>(null)
+  const [submissionsByContractId, setSubmissionsByContractId] = useState<Record<string, Submission | null>>({})
+  const busyRef = useRef<Set<string>>(new Set())
 
   const customerId = user.role === 'customer' ? user.id : null
 
@@ -65,6 +68,41 @@ export function CustomerReviewsPage() {
       .slice()
       .sort((a, b) => bySubmissionTime(b).localeCompare(bySubmissionTime(a)))
   }, [contracts, customerId, submissions])
+
+  useEffect(() => {
+    if (!USE_API) return
+    if (!reviewContracts.length) return
+    let cancelled = false
+
+    const fetchForContract = async (contractId: string) => {
+      if (busyRef.current.has(contractId)) return
+      busyRef.current.add(contractId)
+      try {
+        const raw = await api.get<any>(`/submissions?contractId=${encodeURIComponent(contractId)}`)
+        const list = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : Array.isArray(raw?.data) ? raw.data : raw ? [raw] : []
+        const normalized = (list as unknown[])
+          .map((x) => submissionRepo.normalize(x) ?? submissionRepo.normalize((x as any)?.submission) ?? submissionRepo.normalize((x as any)?.data))
+          .filter(Boolean) as Submission[]
+        const latest = normalized.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null
+        if (!latest || cancelled) return
+        setSubmissionsByContractId((prev) => ({ ...prev, [contractId]: latest }))
+      } catch {
+        // ignore
+      } finally {
+        busyRef.current.delete(contractId)
+      }
+    }
+
+    for (const c of reviewContracts) void fetchForContract(c.id)
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      for (const c of reviewContracts) void fetchForContract(c.id)
+    }, 12000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [reviewContracts])
 
   if (user.role !== 'customer') {
     return (
@@ -278,42 +316,6 @@ export function CustomerReviewsPage() {
     navigate(disputeThreadPath(dispute.id))
   }
 
-  const resolveDisputeDev = (contractId: string, decision: 'executor' | 'customer' | 'split') => {
-    const contract = contractRepo.getById(contractId)
-    if (!contract) return
-
-    const dispute = disputeRepo.getForContract(contract.id)
-    if (!dispute) return
-    const before = dispute.version ?? 1
-    const inWork = disputeRepo.takeInWork({ disputeId: dispute.id, arbiterId: 'system', expectedVersion: before })
-    if (!inWork) return
-
-    const frozen = balanceFreezeRepo.listForTask(contract.taskId).find((e) => e.executorId === contract.executorId)?.amount ?? 0
-    const half = Math.round((frozen / 2) * 100) / 100
-
-    disputeArbitrationService.decideAndExecute({
-      disputeId: dispute.id,
-      actorUserId: 'system',
-      expectedVersion: inWork.version ?? before + 1,
-      decisionKind: decision === 'executor' ? 'release_to_executor' : decision === 'customer' ? 'refund_to_customer' : 'partial_refund',
-      partial: decision === 'split' ? { executorAmount: half, customerAmount: frozen - half } : undefined,
-      comment: `dev: resolve dispute (${decision})`,
-      checklist: { requirementsChecked: true, videoReviewed: true, chatReviewed: true },
-      closeAfter: true,
-    })
-
-    // Keep notification simple: re-use approval notification as a signal payout happened.
-    if (decision === 'executor') {
-      notificationRepo.addTaskApproved({
-        recipientUserId: contract.executorId,
-        actorUserId: auth.user!.id,
-        taskId: contract.taskId,
-      })
-    }
-
-    setRatingContractId(contract.id)
-  }
-
   return (
     <main className="customerTasksPage">
       <div className="customerTasksContainer">
@@ -336,18 +338,22 @@ export function CustomerReviewsPage() {
             <ul className="customerTasksList">
               {reviewContracts.map((contract) => {
                 const task = tasks.find((x) => x.id === contract.taskId) ?? null
-                const executor = users.find((u) => u.id === contract.executorId) ?? null
+                const executor = users.find((u) => userIdMatches(u, contract.executorId)) ?? null
+                const executorIds = executor ? userIdAliases(executor) : [String(contract.executorId)]
                 const dispute = disputes.find((d) => d.contractId === contract.id) ?? null
                 const started = Boolean(
                   USE_API
-                    ? taskAssignments.find((a) => a.taskId === contract.taskId && a.executorId === contract.executorId)?.startedAt
-                    : taskAssignmentRepo.getForTaskExecutor(contract.taskId, contract.executorId)?.startedAt,
+                    ? taskAssignments.find((a) => a.taskId === contract.taskId && executorIds.includes(String(a.executorId)))?.startedAt
+                    : executorIds
+                        .map((execId) => taskAssignmentRepo.getForTaskExecutor(contract.taskId, execId))
+                        .find((x) => x?.startedAt)?.startedAt,
                 )
                 const latestForContract = submissions
                   .filter((s) => s.contractId === contract.id && s.status === 'submitted')
                   .slice()
                   .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] ?? null
                 const submission =
+                  submissionsByContractId[contract.id] ??
                   (contract.lastSubmissionId
                     ? submissions.find((s) => s.id === contract.lastSubmissionId) ?? null
                     : null) ?? latestForContract
@@ -399,7 +405,8 @@ export function CustomerReviewsPage() {
                       </div>
                       <div className="customerTasksItemBadges">
                         <span className="customerTasksItemBadge">
-                          🕒 {t('customerReview.submitted')}: {new Date(submittedAt).toLocaleString()}
+                          <Icon name="clock" size={16} className="iconInline" />
+                          {t('customerReview.submitted')}: {new Date(submittedAt).toLocaleString()}
                         </span>
                         {executor ? (
                           <span className="customerTasksItemBadge">
@@ -411,14 +418,22 @@ export function CustomerReviewsPage() {
                           ? externalFiles.map((f, idx) => (
                               <span key={`${f.url}-${idx}`} className="customerTasksItemBadge customerTasksItemBadge--link">
                                 <a href={f.url} target="_blank" rel="noreferrer">
-                                  🎬 {f.title ? `${t('task.completionLink')}: ${f.title}` : t('task.completionLink')}
+                                  <Icon name="film" size={16} className="iconInline" />
+                                  {f.title ? `${t('task.completionLink')}: ${f.title}` : t('task.completionLink')}
                                 </a>
                               </span>
                             ))
                           : null}
+                        {submission?.message?.trim() ? (
+                          <span className="customerTasksItemBadge" style={{ opacity: 0.9 }}>
+                            <Icon name="chat" size={16} className="iconInline" />
+                            {submission.message}
+                          </span>
+                        ) : null}
                         {isDisputed ? (
                           <span className="customerTasksItemBadge" style={{ color: 'rgba(239,68,68,0.9)' }}>
-                            {locale === 'ru' ? '⚖️ Спор открыт' : '⚖️ Dispute opened'}
+                            <Icon name="gavel" size={16} className="iconInline" />
+                            {locale === 'ru' ? 'Спор открыт' : 'Dispute opened'}
                           </span>
                         ) : null}
                         {isDisputed && dispute?.reason?.reasonId ? (
@@ -524,31 +539,6 @@ export function CustomerReviewsPage() {
                               ? 'Спор'
                               : 'Dispute'}
                         </button>
-                      ) : null}
-                      {contract.status === 'disputed' && devMode.enabled ? (
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          <button
-                            type="button"
-                            className="customerTasksApplicationsBtn"
-                            onClick={() => resolveDisputeDev(contract.id, 'executor')}
-                          >
-                            {locale === 'ru' ? 'Решить: 100% исполнителю' : 'Resolve: 100% executor'}
-                          </button>
-                          <button
-                            type="button"
-                            className="customerTasksApplicationsBtn"
-                            onClick={() => resolveDisputeDev(contract.id, 'customer')}
-                          >
-                            {locale === 'ru' ? 'Решить: 100% заказчику' : 'Resolve: 100% customer'}
-                          </button>
-                          <button
-                            type="button"
-                            className="customerTasksApplicationsBtn"
-                            onClick={() => resolveDisputeDev(contract.id, 'split')}
-                          >
-                            {locale === 'ru' ? 'Решить: 50/50' : 'Resolve: 50/50'}
-                          </button>
-                        </div>
                       ) : null}
                     </div>
                   </li>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { paths, taskDetailsPath } from '@/app/router/paths'
 import { taskRepo } from '@/entities/task/lib/taskRepo'
@@ -46,6 +46,28 @@ type ReferenceVideoItem = {
   blobId: string
   name: string
   mimeType?: string
+}
+
+type PersistedCreateTaskDraftV1 = {
+  v: 1
+  savedAt: number
+  form: FormState
+  descriptionFiles: NonNullable<Task['descriptionFiles']>
+  referenceVideos: ReferenceVideoItem[]
+  currencyTouched: boolean
+}
+
+function parsePersistedDraft(raw: string | null): PersistedCreateTaskDraftV1 | null {
+  if (!raw) return null
+  try {
+    const data = JSON.parse(raw) as any
+    if (!data || typeof data !== 'object') return null
+    if (data.v !== 1) return null
+    if (!data.form || typeof data.form !== 'object') return null
+    return data as PersistedCreateTaskDraftV1
+  } catch {
+    return null
+  }
 }
 
 function maxBudgetIntDigits(currency: FormState['budgetCurrency']) {
@@ -266,6 +288,20 @@ export function CreateTaskPage() {
   const referenceFileInputRef = useRef<HTMLInputElement | null>(null)
   const [referenceBusy, setReferenceBusy] = useState(false)
   const [referenceLimitOpen, setReferenceLimitOpen] = useState(false)
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false)
+  const [draftHydrated, setDraftHydrated] = useState(false)
+
+  const storageKey = useMemo(() => {
+    const userId = auth.user?.id ?? 'anon'
+    const draftId = draft?.id ?? 'new'
+    return `taskflow.createTaskDraft.v1:${userId}:${draftId}`
+  }, [auth.user?.id, draft?.id])
+
+  const clearSavedDraft = useCallback(() => {
+    try {
+      localStorage.removeItem(storageKey)
+    } catch {}
+  }, [storageKey])
 
   useEffect(() => {
     const fromNew = Array.isArray(draft?.descriptionFiles) ? (draft?.descriptionFiles ?? []).slice(0, MAX_DESCRIPTION_FILES) : null
@@ -292,6 +328,65 @@ export function CreateTaskPage() {
     }
     setReferenceVideos([])
   }, [draft?.id])
+
+  useEffect(() => {
+    // Restore in-progress draft from localStorage (persisted across refresh).
+    const saved = (() => {
+      try {
+        return parsePersistedDraft(localStorage.getItem(storageKey))
+      } catch {
+        return null
+      }
+    })()
+    if (saved?.form) setForm(saved.form)
+    if (Array.isArray(saved?.descriptionFiles)) setDescriptionFiles(saved.descriptionFiles)
+    if (Array.isArray(saved?.referenceVideos)) setReferenceVideos(saved.referenceVideos)
+    if (typeof saved?.currencyTouched === 'boolean') setCurrencyTouched(saved.currencyTouched)
+    setDraftHydrated(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey])
+
+  useEffect(() => {
+    if (!draftHydrated) return
+    const payload: PersistedCreateTaskDraftV1 = {
+      v: 1,
+      savedAt: Date.now(),
+      form,
+      descriptionFiles,
+      referenceVideos,
+      currencyTouched,
+    }
+    const id = window.setTimeout(() => {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(payload))
+      } catch {}
+    }, 250)
+    return () => window.clearTimeout(id)
+  }, [draftHydrated, form, descriptionFiles, referenceVideos, currencyTouched, storageKey])
+
+  const hasUnsavedInput = useMemo(() => {
+    if (form.title.trim()) return true
+    if (form.description.trim()) return true
+    if (form.referenceUrl.trim()) return true
+    if (referenceVideos.length) return true
+    if (descriptionFiles.length) return true
+    if (form.formatRequirements.trim()) return true
+    if (form.platforms.length) return true
+    if (Object.keys(form.platformVideoCounts ?? {}).some((k) => (form.platformVideoCounts[k] ?? '').trim())) return true
+    if (form.formats.length) return true
+    if (form.budgetAmount.trim()) return true
+    if (form.maxExecutors.trim()) return true
+    return false
+  }, [descriptionFiles.length, form, referenceVideos.length])
+
+  useEffect(() => {
+    if (!confirmCancelOpen) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setConfirmCancelOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [confirmCancelOpen])
 
   useEffect(() => {
     if (currencyTouched) return
@@ -437,6 +532,7 @@ export function CreateTaskPage() {
           : taskRepo.create({ ...nextData, createdByUserId: auth.user!.id, status: 'draft' as const } as any)
     }
 
+    clearSavedDraft()
     navigate(taskDetailsPath(task.id), {
       state: stateBackTo ? { backTo: stateBackTo } : { fromCreateDraft: true },
     })
@@ -1518,15 +1614,77 @@ export function CreateTaskPage() {
           ) : null}
 
           <div className="actionsRow">
-            <button className="primaryBtn primaryBtn--plain" type="submit">
+            <button className="createTaskPublishBtn" type="submit">
               {t('task.create.publish')} <span className="btnArrow" aria-hidden="true">→</span>
             </button>
-            <Link className="secondaryLink" to={paths.tasks}>
+            <button
+              type="button"
+              className="secondaryLink"
+              onClick={() => {
+                if (hasUnsavedInput) {
+                  setConfirmCancelOpen(true)
+                  return
+                }
+                clearSavedDraft()
+                navigate(paths.tasks)
+              }}
+            >
               {t('common.cancel')}
-            </Link>
+            </button>
           </div>
         </form>
       </div>
+
+      {confirmCancelOpen ? (
+        <div
+          className="createTaskConfirmOverlay"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setConfirmCancelOpen(false)}
+        >
+          <div className="createTaskConfirmModal" onClick={(e) => e.stopPropagation()}>
+            <header className="createTaskConfirmModal__header">
+              <div className="createTaskConfirmModal__title">
+                {locale === 'ru' ? 'Отменить создание задания?' : 'Discard task creation?'}
+              </div>
+              <button
+                type="button"
+                className="createTaskConfirmModal__close"
+                onClick={() => setConfirmCancelOpen(false)}
+                aria-label={locale === 'ru' ? 'Закрыть' : 'Close'}
+              >
+                ×
+              </button>
+            </header>
+            <div className="createTaskConfirmModal__body">
+              <div className="createTaskConfirmModal__text">
+                {locale === 'ru'
+                  ? 'Вы уже начали вводить данные. Если выйти сейчас, они не сохранятся.'
+                  : 'You have started filling in the form. If you leave now, your changes will be lost.'}
+              </div>
+            </div>
+            <footer className="createTaskConfirmModal__footer">
+              <button type="button" className="createTaskConfirmModal__confirm" onClick={() => setConfirmCancelOpen(false)}>
+                {locale === 'ru' ? 'Остаться' : 'Stay'}
+              </button>
+              <button
+                type="button"
+                className="createTaskConfirmModal__cancel"
+                onClick={() => {
+                  clearSavedDraft()
+                  if (!USE_API) {
+                    for (const v of referenceVideos) void deleteBlob(v.blobId).catch(() => {})
+                  }
+                  setConfirmCancelOpen(false)
+                  navigate(paths.tasks)
+                }}
+              >
+                {locale === 'ru' ? 'Выйти' : 'Leave'}
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

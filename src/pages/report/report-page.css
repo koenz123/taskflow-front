@@ -85,7 +85,7 @@
   width: 100%;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: var(--card2);
+  background: var(--surface1);
   color: var(--text);
   padding: 12px;
   font-size: 13px;
@@ -96,8 +96,8 @@
 
 .reportPage__detail:focus {
   outline: none;
-  border-color: rgba(124, 58, 237, 0.55);
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  box-shadow: 0 0 0 4px var(--ring);
 }
 
 .reportPage__footer {

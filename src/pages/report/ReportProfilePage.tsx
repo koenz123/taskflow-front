@@ -7,6 +7,7 @@ import { userProfilePath } from '@/app/router/paths'
 import { CustomSelect } from '@/shared/ui/custom-select/CustomSelect'
 import { getReportCategories } from '@/features/report/reportCatalog'
 import './report-page.css'
+import { userIdMatches } from '@/shared/auth/userIdAliases'
 
 export function ReportProfilePage() {
   const { t } = useI18n()
@@ -15,7 +16,7 @@ export function ReportProfilePage() {
   const { userId } = useParams<{ userId: string }>()
   const users = useUsers()
 
-  const owner = userId ? users.find((u) => u.id === userId) ?? null : null
+  const owner = userId ? users.find((u) => userIdMatches(u, userId)) ?? null : null
 
   const categories = useMemo(() => {
     return getReportCategories(owner?.role ?? null)

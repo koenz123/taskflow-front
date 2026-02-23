@@ -3,18 +3,17 @@ import { Link, useLocation } from 'react-router-dom'
 import { paths } from '@/app/router/paths'
 import { useI18n } from '@/shared/i18n/I18nContext'
 import { useAuth } from '@/shared/auth/AuthContext'
-import { useDevMode } from '@/shared/dev/devMode'
 import { useTasks } from '@/entities/task/lib/useTasks'
 import { useApplications } from '@/entities/task/lib/useApplications'
 import { useContracts } from '@/entities/contract/lib/useContracts'
 import { useTaskAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
 import { useNotifications } from '@/entities/notification/lib/useNotifications'
 import './sidebar.css'
+import { Icon, type IconName } from '@/shared/ui/icon/Icon'
 
 export function Sidebar() {
   const { t, locale } = useI18n()
   const auth = useAuth()
-  const devMode = useDevMode()
   const location = useLocation()
   const tasks = useTasks()
   const applications = useApplications()
@@ -22,8 +21,6 @@ export function Sidebar() {
   const assignments = useTaskAssignments()
   useNotifications(auth.user?.id ?? null)
   const [isMobileOpen, setIsMobileOpen] = useState(false)
-  const [isHovered, setIsHovered] = useState(false)
-  const isExpanded = isMobileOpen || isHovered
 
   // Закрываем мобильное меню при смене маршрута
   useEffect(() => {
@@ -75,7 +72,7 @@ export function Sidebar() {
 
   type NavItem = {
     path: string
-    icon: string
+    icon: IconName
     label: string
     show: boolean
     badgeCount?: number
@@ -84,45 +81,39 @@ export function Sidebar() {
   const navItems: NavItem[] = [
     {
       path: paths.disputes,
-      icon: '⚖️',
+      icon: 'gavel',
       label: locale === 'ru' ? 'Споры' : 'Disputes',
       show: auth.user?.role === 'arbiter',
     },
     {
       path: paths.tasks,
-      icon: '📋',
+      icon: 'clipboard',
       label: t('nav.tasks'),
       // For customers we hide the generic "Tasks" list in the sidebar
       show: auth.user?.role !== 'customer' && auth.user?.role !== 'arbiter',
     },
     {
       path: paths.taskCreate,
-      icon: '➕',
+      icon: 'plus',
       label: t('nav.postTask'),
       show: auth.user?.role === 'customer',
     },
     {
       path: paths.customerTasks,
-      icon: '📝',
+      icon: 'note',
       label: t('nav.myTasks'),
       show: auth.user?.role === 'customer',
       badgeCount: myTasksBadgeCount,
     },
     {
-      path: paths.customerArchive,
-      icon: '📦',
-      label: t('nav.archive'),
-      show: auth.user?.role === 'customer' && devMode.enabled,
-    },
-    {
       path: paths.profile,
-      icon: '👤',
+      icon: 'user',
       label: t('nav.profile'),
       show: !!auth.user && auth.user.role !== 'arbiter',
     },
     {
       path: auth.user ? `/works/${auth.user.id}` : paths.home,
-      icon: '🎨',
+      icon: 'palette',
       label: t('nav.portfolio'),
       show: !!auth.user && auth.user.role !== 'arbiter',
     },
@@ -156,18 +147,12 @@ export function Sidebar() {
       {isMobileOpen && <div className="sidebar__overlay" onClick={() => setIsMobileOpen(false)} />}
 
       {/* Сайдбар */}
-      <aside 
-        className={`sidebar ${isExpanded ? 'sidebar--expanded' : 'sidebar--collapsed'} ${isMobileOpen ? 'sidebar--mobile-open' : ''}`}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-      >
+      <aside className={`sidebar ${isMobileOpen ? 'sidebar--mobile-open' : ''}`}>
         <div className="sidebar__inner">
           {/* Логотип */}
           <Link to={logoPath} className="sidebar__logo">
             <span className="sidebar__logo__icon" aria-hidden="true">TF</span>
-            <span className={`sidebar__logo__text ${isExpanded ? 'sidebar__logo__text--visible' : ''}`}>
-              TaskFlow
-            </span>
+            <span className="sidebar__logo__text">TaskFlow</span>
           </Link>
 
           {/* Навигация */}
@@ -184,18 +169,16 @@ export function Sidebar() {
                   key={item.path}
                   to={item.path}
                   className={`sidebar__nav__item ${isActive ? 'sidebar__nav__item--active' : ''}`}
-                  title={!isExpanded ? item.label : undefined}
+                  title={item.label}
                 >
                   <span className="sidebar__nav__icon" aria-hidden="true">
-                    {item.icon}
+                    <Icon name={item.icon} size={18} />
                   </span>
-                  <span className={`sidebar__nav__label ${isExpanded ? 'sidebar__nav__label--visible' : ''}`}>
-                    {item.label}
-                  </span>
+                  <span className="sidebar__nav__label">{item.label}</span>
                   {item.badgeCount ? (
                     <span
                       className="sidebar__nav__badge"
-                      title={isExpanded ? `${item.badgeCount}` : `${item.label}: ${item.badgeCount}`}
+                      title={`${item.label}: ${item.badgeCount}`}
                       aria-label={`${item.label}: ${item.badgeCount}`}
                     >
                       {item.path === paths.customerTasks ? myTasksBadgeText : item.badgeCount}

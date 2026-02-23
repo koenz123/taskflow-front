@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { paths } from '@/app/router/paths'
 import { useI18n } from '@/shared/i18n/I18nContext'
 import { useAuth } from '@/shared/auth/AuthContext'
 import { useUsers } from '@/entities/user/lib/useUsers'
 import './header.css'
-import { useDevMode } from '@/shared/dev/devMode'
 import { getActiveTheme, setTheme } from '@/shared/theme/theme'
+import { Icon } from '@/shared/ui/icon/Icon'
 import {
   markAllNotificationsReadOptimistic,
   markNotificationReadOptimistic,
@@ -19,25 +19,66 @@ import { useTasks } from '@/entities/task/lib/useTasks'
 import { buildNotificationFeedVM } from '@/entities/notification/lib/notificationViewModel'
 import { api } from '@/shared/api/api'
 
-const DEV_ARBITER_USER_ID = 'user_dev_arbiter'
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
+
+function FlagIcon(props: { code: 'ru' | 'us' }) {
+  if (props.code === 'ru') {
+    return (
+      <span className="langFlagIcon" aria-hidden="true">
+        <svg viewBox="0 0 18 12" width="18" height="12" focusable="false" aria-hidden="true">
+          <rect x="0" y="0" width="18" height="4" fill="#ffffff" />
+          <rect x="0" y="4" width="18" height="4" fill="#1d4ed8" />
+          <rect x="0" y="8" width="18" height="4" fill="#ef4444" />
+        </svg>
+      </span>
+    )
+  }
+  // US
+  return (
+    <span className="langFlagIcon" aria-hidden="true">
+      <svg viewBox="0 0 18 12" width="18" height="12" focusable="false" aria-hidden="true">
+        <rect x="0" y="0" width="18" height="12" fill="#ffffff" />
+        {/* stripes */}
+        <rect x="0" y="0" width="18" height="1" fill="#ef4444" />
+        <rect x="0" y="2" width="18" height="1" fill="#ef4444" />
+        <rect x="0" y="4" width="18" height="1" fill="#ef4444" />
+        <rect x="0" y="6" width="18" height="1" fill="#ef4444" />
+        <rect x="0" y="8" width="18" height="1" fill="#ef4444" />
+        <rect x="0" y="10" width="18" height="1" fill="#ef4444" />
+        {/* canton */}
+        <rect x="0" y="0" width="8" height="7" fill="#1e3a8a" />
+        {/* simple stars */}
+        <circle cx="1.5" cy="1.5" r="0.35" fill="#ffffff" />
+        <circle cx="3.2" cy="1.5" r="0.35" fill="#ffffff" />
+        <circle cx="4.9" cy="1.5" r="0.35" fill="#ffffff" />
+        <circle cx="6.6" cy="1.5" r="0.35" fill="#ffffff" />
+        <circle cx="2.35" cy="2.8" r="0.35" fill="#ffffff" />
+        <circle cx="4.05" cy="2.8" r="0.35" fill="#ffffff" />
+        <circle cx="5.75" cy="2.8" r="0.35" fill="#ffffff" />
+        <circle cx="1.5" cy="4.1" r="0.35" fill="#ffffff" />
+        <circle cx="3.2" cy="4.1" r="0.35" fill="#ffffff" />
+        <circle cx="4.9" cy="4.1" r="0.35" fill="#ffffff" />
+        <circle cx="6.6" cy="4.1" r="0.35" fill="#ffffff" />
+        <circle cx="2.35" cy="5.4" r="0.35" fill="#ffffff" />
+        <circle cx="4.05" cy="5.4" r="0.35" fill="#ffffff" />
+        <circle cx="5.75" cy="5.4" r="0.35" fill="#ffffff" />
+      </svg>
+    </span>
+  )
+}
 
 export function Header() {
   const { locale, setLocale, t } = useI18n()
   const auth = useAuth()
-  const devMode = useDevMode()
   const users = useUsers()
   const tasks = useTasks()
   const notifications = useNotifications(auth.user?.id)
   const location = useLocation()
-  const navigate = useNavigate()
   const [theme, setThemeState] = useState(() => getActiveTheme())
   const [isLangOpen, setIsLangOpen] = useState(false)
   const langRef = useRef<HTMLDivElement | null>(null)
   const [isNotifOpen, setIsNotifOpen] = useState(false)
   const notifRef = useRef<HTMLDivElement | null>(null)
-
-  const flag = useMemo(() => (locale === 'ru' ? '🇷🇺' : '🇺🇸'), [locale])
 
   const userById = useMemo(() => {
     const map = new Map<string, (typeof users)[number]>()
@@ -51,9 +92,6 @@ export function Header() {
     return map
   }, [tasks])
 
-  const isArbiter = Boolean(auth.user?.role === 'arbiter' && devMode.enabled && !USE_API)
-  const canJumpToArbiter = Boolean(auth.user && devMode.enabled && !USE_API && auth.user.role !== 'arbiter')
-  const arbiterExists = Boolean(userById.get(DEV_ARBITER_USER_ID))
   const avatarUrl = auth.user?.avatarDataUrl ?? null
   const avatarLabel = auth.user?.fullName?.trim() || auth.user?.email || ''
   const avatarInitials = useMemo(() => {
@@ -65,34 +103,6 @@ export function Header() {
     const raw = (first + (second ?? '')).toUpperCase()
     return raw.slice(0, 2)
   }, [auth.user?.fullName])
-  const roleLabel = (role: string) => {
-    if (locale === 'ru') {
-      if (role === 'customer') return 'Заказчик'
-      if (role === 'executor') return 'Исполнитель'
-      if (role === 'arbiter') return 'Арбитр'
-    }
-    if (role === 'customer') return 'Customer'
-    if (role === 'executor') return 'Executor'
-    if (role === 'arbiter') return 'Arbiter'
-    return role
-  }
-
-  const switchableUsers = useMemo(() => {
-    // Arbiter can switch into any user (dev tool).
-    // Keep current user included to avoid empty select state.
-    if (!auth.user) return []
-    const list = users.slice()
-    // Stable ordering: arbiter first, then customers, then executors, then others by name/email.
-    const rank = (role: string) => (role === 'arbiter' ? 0 : role === 'customer' ? 1 : role === 'executor' ? 2 : 9)
-    return list.sort((a, b) => {
-      const ra = rank(a.role)
-      const rb = rank(b.role)
-      if (ra !== rb) return ra - rb
-      const an = (a.fullName || a.email || a.id).toLowerCase()
-      const bn = (b.fullName || b.email || b.id).toLowerCase()
-      return an.localeCompare(bn)
-    })
-  }, [auth.user, users])
 
   useEffect(() => {
     if (!isLangOpen) return
@@ -152,7 +162,7 @@ export function Header() {
         aria-expanded={isLangOpen}
         onClick={() => setIsLangOpen((v) => !v)}
       >
-        {flag}
+        <FlagIcon code={locale === 'ru' ? 'ru' : 'us'} />
       </button>
 
       {isLangOpen ? (
@@ -166,11 +176,13 @@ export function Header() {
               setIsLangOpen(false)
             }}
           >
-            <span className="lang__flag" aria-hidden="true">
-              🇺🇸
-            </span>
+            <FlagIcon code="us" />
             <span className="lang__label">English</span>
-            {locale === 'en' ? <span className="lang__current">✓</span> : null}
+            {locale === 'en' ? (
+              <span className="lang__current" aria-hidden="true">
+                <Icon name="check" size={16} />
+              </span>
+            ) : null}
           </button>
           <button
             type="button"
@@ -181,11 +193,13 @@ export function Header() {
               setIsLangOpen(false)
             }}
           >
-            <span className="lang__flag" aria-hidden="true">
-              🇷🇺
-            </span>
+            <FlagIcon code="ru" />
             <span className="lang__label">Русский</span>
-            {locale === 'ru' ? <span className="lang__current">✓</span> : null}
+            {locale === 'ru' ? (
+              <span className="lang__current" aria-hidden="true">
+                <Icon name="check" size={16} />
+              </span>
+            ) : null}
           </button>
         </div>
       ) : null}
@@ -218,7 +232,7 @@ export function Header() {
           aria-expanded={isNotifOpen}
           onClick={() => setIsNotifOpen((v) => !v)}
         >
-          <span aria-hidden="true">🔔</span>
+          <Icon name="bell" size={18} />
           {badgeText ? <span className="notif__badge">{badgeText}</span> : null}
         </button>
 
@@ -274,7 +288,7 @@ export function Header() {
                       }}
                     >
                       <span className="notifItem__icon" aria-hidden="true">
-                        {vm.icon}
+                        <Icon name={vm.icon} size={18} />
                       </span>
                       <span className="notifItem__body">
                         <span className="notifItem__title">{vm.title}</span>
@@ -308,71 +322,6 @@ export function Header() {
         <div className="header__right">
           <button
             type="button"
-            className={`devToggle${devMode.enabled ? ' devToggle--on' : ''}`}
-            onClick={() => devMode.setEnabled(!devMode.enabled)}
-            aria-pressed={devMode.enabled}
-            title={t('dev.mode')}
-          >
-            <span className="devToggle__label">{t('dev.mode')}</span>
-            <span className="devToggle__state">{devMode.enabled ? t('dev.on') : t('dev.off')}</span>
-          </button>
-
-          {USE_API && devMode.enabled ? (
-            <span style={{ fontSize: 12, opacity: 0.8, marginLeft: 10 }}>
-              {locale === 'ru' ? 'Dev mode ограничен в API‑режиме' : 'Dev mode is limited in API mode'}
-            </span>
-          ) : null}
-
-          {canJumpToArbiter ? (
-            <button
-              type="button"
-              className="arbiterJumpBtn"
-              disabled={!arbiterExists}
-              aria-label={locale === 'ru' ? 'Перейти в аккаунт арбитра' : 'Switch to arbiter'}
-              title={locale === 'ru' ? 'Перейти в аккаунт арбитра (dev)' : 'Switch to arbiter (dev)'}
-              onClick={() => {
-                if (!arbiterExists) return
-                auth.switchUser(DEV_ARBITER_USER_ID)
-                navigate(paths.disputes)
-              }}
-            >
-              <span aria-hidden="true">⚖️</span>
-            </button>
-          ) : null}
-
-          {isArbiter && auth.user ? (
-            <div className="profileSwitch" aria-label={locale === 'ru' ? 'Переключение профиля' : 'Switch profile'}>
-              <span className="profileSwitch__label">{locale === 'ru' ? 'Профиль' : 'Profile'}</span>
-              <select
-                className="profileSwitch__select"
-                value={auth.user.id}
-                onChange={(e) => {
-                  const nextUserId = e.target.value
-                  const nextUser = userById.get(nextUserId) ?? null
-                  auth.switchUser(nextUserId)
-                  // Move to a safe landing page for the switched role.
-                  if (!nextUser) {
-                    navigate(paths.profile)
-                    return
-                  }
-                  if (nextUser.role === 'customer') navigate(paths.customerTasks)
-                  else if (nextUser.role === 'executor') navigate(paths.tasks)
-                  else if (nextUser.role === 'arbiter') navigate(paths.disputes)
-                  else navigate(paths.profile)
-                }}
-                title={locale === 'ru' ? 'Переключить активный аккаунт (dev)' : 'Switch active account (dev)'}
-              >
-                {switchableUsers.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.fullName || u.email || u.id} · {roleLabel(u.role)}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-
-          <button
-            type="button"
             className="theme__btn"
             aria-label={locale === 'ru' ? 'Тема' : 'Theme'}
             aria-pressed={theme === 'dark'}
@@ -383,7 +332,7 @@ export function Header() {
               setThemeState(next)
             }}
           >
-            <span aria-hidden="true">{theme === 'dark' ? '🌙' : '☀️'}</span>
+            <Icon name={theme === 'dark' ? 'moon' : 'sun'} size={18} />
           </button>
 
           {auth.user ? (

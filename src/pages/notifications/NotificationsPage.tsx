@@ -16,6 +16,7 @@ import {
   refreshNotifications,
 } from '@/entities/notification/lib/useNotifications'
 import './notifications.css'
+import { Icon } from '@/shared/ui/icon/Icon'
 
 type Filter = 'all' | 'unread'
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
@@ -131,7 +132,7 @@ export function NotificationsPage() {
                     }}
                   >
                     <span className="notificationsItemIcon" aria-hidden="true">
-                      {vm.icon}
+                      <Icon name={vm.icon} size={18} />
                     </span>
                     <span className="notificationsItemBody">
                       <span className="notificationsItemTitle">{vm.title}</span>

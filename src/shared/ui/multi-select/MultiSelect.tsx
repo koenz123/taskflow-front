@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import './multi-select.css'
+import { Icon } from '@/shared/ui/icon/Icon'
 
 export type MultiSelectOption = { value: string; label: string }
 
@@ -181,7 +182,7 @@ export function MultiSelect({
                   onClick={() => toggle(opt.value)}
                 >
                   <span className="multiSelect__check" aria-hidden="true">
-                    {checked ? '✓' : ''}
+                    {checked ? <Icon name="check" size={16} /> : null}
                   </span>
                   <span className="multiSelect__optionLabel">{opt.label}</span>
                 </button>

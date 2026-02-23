@@ -8,12 +8,14 @@ import { SocialLinks } from '@/shared/social/SocialLinks'
 import { useWorks } from '@/entities/work/lib/useWorks'
 import { VideoEmbed } from '@/shared/ui/VideoEmbed'
 import { PortfolioInline } from '@/pages/portfolio/PortfolioInline'
+import { getWorkDisplayMedia, isWorkEmbeddable } from '@/entities/work/lib/workMedia'
 import { useRatings } from '@/entities/rating/lib/useRatings'
 import { getEffectiveRatingSummaryForUser } from '@/shared/lib/ratingSummary'
 import { useRatingAdjustments } from '@/entities/ratingAdjustment/lib/useRatingAdjustments'
-import { useDevMode } from '@/shared/dev/devMode'
 import { SplashScreen } from '@/shared/ui/SplashScreen'
 import './profile.css'
+import { userIdMatches } from '@/shared/auth/userIdAliases'
+import { Icon } from '@/shared/ui/icon/Icon'
 
 export function PublicProfilePage() {
   const { t, locale } = useI18n()
@@ -21,13 +23,12 @@ export function PublicProfilePage() {
   const location = useLocation()
   const users = useUsers()
   const auth = useAuth()
-  const devMode = useDevMode()
   const ratings = useRatings()
   const adjustments = useRatingAdjustments()
   const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
   const [loadedOnce, setLoadedOnce] = useState(false)
 
-  const user = userId ? users.find((u) => u.id === userId) ?? null : null
+  const user = userId ? users.find((u) => userIdMatches(u, userId)) ?? null : null
   const works = useWorks(user?.id ?? null)
   const isOwner = user ? auth.user?.id === user.id : false
   // Show the portfolio section for cross-role views:
@@ -106,24 +107,13 @@ export function PublicProfilePage() {
                 <span className="pill">{user.role === 'customer' ? t('profile.roleCustomer') : t('profile.roleExecutor')}</span>
                 {ratingSummary ? (
                   <Link className="pill profileRatingLink" to={userReviewsPath(user.id)} state={{ backTo }}>
-                    ★ {ratingSummary.avg.toFixed(1)} ({ratingSummary.count})
+                    <Icon name="star" size={16} className="iconInline" />
+                    {ratingSummary.avg.toFixed(1)} ({ratingSummary.count})
                   </Link>
                 ) : null}
                 <span className="pill">{user.phone}</span>
                 {user.company ? <span className="pill">{user.company}</span> : null}
               </div>
-          {devMode.enabled ? (
-            <div className="profileMetaLine profileMetaLine--id">
-              <span>
-                {t('profile.personalIdLabel')}: {user.personalId}
-              </span>
-              {user.role === 'executor' ? (
-                <span>
-                  {t('profile.executorIdLabel')}: {user.id}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
               <div className="profileSocials profileSocials--inline">
                 <SocialLinks socials={user.socials} />
               </div>
@@ -171,23 +161,33 @@ export function PublicProfilePage() {
                 </div>
                 <p>{work.description}</p>
                 {(() => {
-                  const src = work.mediaUrl ?? work.videoUrl ?? null
-                  if (!src) return null
-                  return work.mediaType === 'photo' ? (
+                  const media = getWorkDisplayMedia(work)
+                  if (!media) return null
+                  if (!isWorkEmbeddable(work)) {
+                    return (
+                      <a className="profileWorksCard__link" href={media.src} target="_blank" rel="noreferrer">
+                        {t('profile.videoLink')}
+                      </a>
+                    )
+                  }
+                  return media.type === 'photo' ? (
                     <img
-                      src={src}
+                      src={media.src}
+                      data-fallback={media.candidates[1] ?? ''}
+                      onError={(e) => {
+                        const el = e.currentTarget
+                        const fb = String(el.getAttribute('data-fallback') ?? '').trim()
+                        if (!fb || el.src.endsWith(fb)) return
+                        el.setAttribute('data-fallback', '')
+                        el.src = fb
+                      }}
                       alt={work.title}
                       style={{ width: '100%', borderRadius: 10, marginTop: 6, objectFit: 'cover' }}
                     />
                   ) : (
-                    <VideoEmbed src={src} />
+                    <VideoEmbed src={media.src} sources={media.candidates} />
                   )
                 })()}
-                {(work.mediaUrl ?? work.videoUrl) ? (
-                  <a className="profileWorksCard__link" href={work.mediaUrl ?? work.videoUrl} target="_blank" rel="noreferrer">
-                    {t('profile.videoLink')}
-                  </a>
-                ) : null}
               </div>
             ))}
           </div>

@@ -8,6 +8,7 @@ import { useI18n } from '@/shared/i18n/I18nContext'
 import type { TranslationKey } from '@/shared/i18n/translations'
 import { timeLeftMs } from '@/entities/task/lib/taskDeadline'
 import { useAuth } from '@/shared/auth/AuthContext'
+import { executorIdAliases } from '@/shared/auth/userIdAliases'
 import { CustomSelect } from '@/shared/ui/custom-select/CustomSelect'
 import { useApplications } from '@/entities/task/lib/useApplications'
 import { applicationRepo } from '@/entities/task/lib/applicationRepo'
@@ -20,6 +21,7 @@ import './tasks.css'
 import { StatusPill } from '@/shared/ui/status-pill/StatusPill'
 import { Pagination } from '@/shared/ui/pagination/Pagination'
 import { timeAgo } from '@/shared/lib/timeAgo'
+import { Icon } from '@/shared/ui/icon/Icon'
 
 function formatBudget(amount?: number, currency?: string) {
   if (!amount) return null
@@ -110,30 +112,33 @@ export function TasksPage() {
   const prevMarketPageRef = useRef<number | null>(null)
   const applications = useApplications()
   const assignments = useTaskAssignments()
+  const executorIdSet = useMemo(() => {
+    if (auth.user?.role !== 'executor') return new Set<string>()
+    return new Set(executorIdAliases(auth.user))
+  }, [auth.user?.id, auth.user?.role, auth.user?.telegramUserId])
   const appliedTaskIds = useMemo(() => {
     if (auth.user?.role !== 'executor' || !auth.user?.id) return new Set<string>()
     return new Set(
       applications
-        .filter((app) => app.executorUserId === auth.user?.id && app.status === 'pending')
+        .filter((app) => executorIdSet.has(String(app.executorUserId)) && app.status === 'pending')
         .map((app) => app.taskId),
     )
-  }, [applications, auth.user?.id, auth.user?.role])
+  }, [applications, auth.user?.id, auth.user?.role, executorIdSet])
 
   const removedAutoTaskIds = useMemo(() => {
     if (auth.user?.role !== 'executor' || !auth.user?.id) return new Set<string>()
     return new Set(
       assignments
-        .filter((a) => a.executorId === auth.user!.id && a.status === 'removed_auto')
+        .filter((a) => executorIdSet.has(String(a.executorId)) && a.status === 'removed_auto')
         .map((a) => a.taskId),
     )
-  }, [assignments, auth.user?.id, auth.user?.role])
+  }, [assignments, auth.user?.id, auth.user?.role, executorIdSet])
 
   const myActiveAssignments = useMemo(() => {
     if (auth.user?.role !== 'executor' || !auth.user?.id) return []
-    const id = auth.user.id
     const allowed = new Set(['pending_start', 'in_progress', 'pause_requested', 'paused', 'submitted', 'overdue'])
-    return assignments.filter((a) => a.executorId === id && allowed.has(a.status))
-  }, [assignments, auth.user?.id, auth.user?.role])
+    return assignments.filter((a) => executorIdSet.has(String(a.executorId)) && allowed.has(a.status))
+  }, [assignments, auth.user?.id, auth.user?.role, executorIdSet])
 
   const myActiveTaskIds = useMemo(() => new Set(myActiveAssignments.map((a) => a.taskId)), [myActiveAssignments])
 
@@ -609,7 +614,9 @@ export function TasksPage() {
                     <div className={`taskCard__topRow${compactPayout ? ' taskCard__topRow--compactPayout' : ''}`}>
                     <div className="taskCard__metaInline">
                       <span className="metaChip metaChip--published" title={`${t('tasks.published')}: ${published}`} aria-label={`${t('tasks.published')}: ${published}`}>
-                        <span className="metaChip__icon" aria-hidden="true">🗓</span>
+                        <span className="metaChip__icon" aria-hidden="true">
+                          <Icon name="calendar" size={16} />
+                        </span>
                         <span className="metaChip__value">{published}</span>
                       </span>
                       <span className="taskCard__metaRest" aria-hidden={false}>
@@ -618,7 +625,9 @@ export function TasksPage() {
                             className="metaChip metaChip--truncate"
                             title={`${t('task.create.category')}: ${platform}`}
                           >
-                            <span className="metaChip__icon" aria-hidden="true">📱</span>
+                            <span className="metaChip__icon" aria-hidden="true">
+                              <Icon name="phone" size={16} />
+                            </span>
                             <span className="metaChip__value">{platform}</span>
                           </span>
                         ) : null}
@@ -627,7 +636,9 @@ export function TasksPage() {
                             className="metaChip metaChip--truncate"
                             title={`${t('task.create.location')}: ${format}`}
                           >
-                            <span className="metaChip__icon" aria-hidden="true">🎞️</span>
+                            <span className="metaChip__icon" aria-hidden="true">
+                              <Icon name="film" size={16} />
+                            </span>
                             <span className="metaChip__value">{format}</span>
                           </span>
                         ) : null}
@@ -718,7 +729,16 @@ export function TasksPage() {
                       />
 
                       <div className="taskCard__badges">
-                        <StatusPill tone={task.status} label={statusLabel(task.status, t)} />
+                        {(() => {
+                          const assignedCount = task.assignedExecutorIds?.length ?? 0
+                          const maxExecutors = task.maxExecutors ?? 1
+                          const hasSlot = assignedCount < maxExecutors
+                          const effectiveStatus =
+                            isExecutor && hasSlot && (task.status === 'in_progress' || task.status === 'review' || task.status === 'dispute')
+                              ? 'open'
+                              : task.status
+                          return <StatusPill tone={effectiveStatus} label={statusLabel(effectiveStatus, t)} />
+                        })()}
                         {task.dueDate ? (
                           <span className="chip">
                             {t('tasks.due')}: {task.dueDate}
@@ -743,7 +763,9 @@ export function TasksPage() {
                     <div className={`taskCard__topRow${compactPayout ? ' taskCard__topRow--compactPayout' : ''}`}>
                     <div className="taskCard__metaInline">
                       <span className="metaChip metaChip--published" title={`${t('tasks.published')}: ${published}`} aria-label={`${t('tasks.published')}: ${published}`}>
-                        <span className="metaChip__icon" aria-hidden="true">🗓</span>
+                        <span className="metaChip__icon" aria-hidden="true">
+                          <Icon name="calendar" size={16} />
+                        </span>
                         <span className="metaChip__value">{published}</span>
                       </span>
                       <span className="taskCard__metaRest" aria-hidden={false}>
@@ -752,7 +774,9 @@ export function TasksPage() {
                             className="metaChip metaChip--truncate"
                             title={`${t('task.create.category')}: ${platform}`}
                           >
-                            <span className="metaChip__icon" aria-hidden="true">📱</span>
+                            <span className="metaChip__icon" aria-hidden="true">
+                              <Icon name="phone" size={16} />
+                            </span>
                             <span className="metaChip__value">{platform}</span>
                           </span>
                         ) : null}
@@ -761,7 +785,9 @@ export function TasksPage() {
                             className="metaChip metaChip--truncate"
                             title={`${t('task.create.location')}: ${format}`}
                           >
-                            <span className="metaChip__icon" aria-hidden="true">🎞️</span>
+                            <span className="metaChip__icon" aria-hidden="true">
+                              <Icon name="film" size={16} />
+                            </span>
                             <span className="metaChip__value">{format}</span>
                           </span>
                         ) : null}

@@ -4,6 +4,7 @@ import { pickText } from '@/entities/task/lib/taskText'
 import { disputeThreadPath, paths, taskDetailsPath, userProfilePath } from '@/app/router/paths'
 import type { TranslationKey } from '@/shared/i18n/translations'
 import { timeAgo } from '@/shared/lib/timeAgo'
+import type { IconName } from '@/shared/ui/icon/Icon'
 
 export type NotificationVM = {
   id: string
@@ -11,7 +12,7 @@ export type NotificationVM = {
   /**
    * Thematic event icon.
    */
-  icon: string
+  icon: IconName
   title: string // primary line (action)
   subtitle: string // secondary line (task title / context)
   timeLabel: string
@@ -25,62 +26,62 @@ export type NotificationVM = {
   sourceNotificationIds?: string[]
 }
 
-function iconFor(type: Notification['type']): string {
+function iconFor(type: Notification['type']): IconName {
   switch (type) {
     case 'task_application':
-      return '📝'
+      return 'note'
     case 'task_application_cancelled':
-      return '🚫'
+      return 'ban'
     case 'task_taken':
-      return '👤'
+      return 'user'
     case 'task_assigned':
-      return '✅'
+      return 'check'
     case 'task_assigned_else':
-      return '❌'
+      return 'x'
     case 'task_submitted':
-      return '📤'
+      return 'upload'
     case 'task_resubmitted':
-      return '🔁'
+      return 'repeat'
     case 'task_approved':
-      return '🎉'
+      return 'party'
     case 'task_revision':
-      return '✏️'
+      return 'pencil'
     case 'task_pause_requested':
-      return '⏸️'
+      return 'pause'
     case 'task_pause_accepted':
-      return '⏯️'
+      return 'playPause'
     case 'task_pause_rejected':
-      return '⛔'
+      return 'ban'
     case 'task_completed':
-      return '🏁'
+      return 'finish'
     case 'task_unclaimed':
-      return '⏳'
+      return 'hourglass'
     case 'task_executor_no_start':
-      return '⌛'
+      return 'hourglass'
     case 'task_executor_overdue':
-      return '⏰'
+      return 'timer'
     case 'executor_violation_warning':
-      return '⚠️'
+      return 'warning'
     case 'executor_violation_rating_penalty':
-      return '📉'
+      return 'chartDown'
     case 'executor_violation_respond_block':
-      return '⛔'
+      return 'ban'
     case 'executor_violation_ban':
-      return '🛑'
+      return 'ban'
     case 'dispute_opened':
-      return '⚖️'
+      return 'gavel'
     case 'dispute_message':
-      return '💬'
+      return 'chat'
     case 'dispute_status':
-      return '🔄'
+      return 'refresh'
     case 'dispute_sla_threshold':
-      return '⏰'
+      return 'timer'
     case 'rate_customer':
-      return '⭐'
+      return 'star'
     case 'rate_executor':
-      return '⭐'
+      return 'star'
     default:
-      return '🔔'
+      return 'bell'
   }
 }
 
@@ -468,7 +469,7 @@ export function buildNotificationFeedVM(params: {
       vm: {
       id: `disp_unread_${disputeId}`,
       unread: true,
-      icon: '💬',
+      icon: 'chat',
       title: locale === 'ru' ? `Непрочитанные сообщения в споре (${count})` : `Unread dispute messages (${count})`,
       subtitle: taskTitle,
       timeLabel: timeAgo(latest.createdAt, locale, Date.now()),

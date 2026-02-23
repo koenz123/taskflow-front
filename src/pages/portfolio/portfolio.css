@@ -104,7 +104,7 @@
 }
 
 .portfolioCarousel__viewport:focus-visible {
-  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.18);
+  box-shadow: 0 0 0 4px var(--ring);
 }
 
 .portfolioCarousel__track {
@@ -252,7 +252,7 @@
 }
 
 .portfolioVideo__openBtn:focus-visible {
-  outline: 2px solid rgba(124, 58, 237, 0.6);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -460,7 +460,7 @@
 }
 
 .portfolioCarousel__indicatorBtn--active {
-  background: rgba(124, 58, 237, 0.9);
+  background: var(--accent);
 }
 
 .portfolioWorkOverlay {
@@ -530,7 +530,7 @@
 .portfolioWorkOverlay__edit {
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: rgba(99, 102, 241, 0.12);
+  background: var(--surface1);
   color: var(--text);
   height: 34px;
   padding: 0 12px;
@@ -542,7 +542,7 @@
 
 .portfolioWorkOverlay__edit:hover {
   border-color: var(--border3);
-  background: rgba(99, 102, 241, 0.18);
+  background: var(--surface2);
   transform: translateY(-1px);
 }
 
@@ -558,15 +558,15 @@
 }
 
 .portfolioWorkOverlay__edit:focus-visible {
-  outline: 2px solid rgba(124, 58, 237, 0.6);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
 .portfolioWorkOverlay__delete {
   border-radius: 10px;
-  border: 1px solid rgba(255, 80, 80, 0.26);
-  background: rgba(255, 80, 80, 0.08);
-  color: rgba(255, 215, 215, 0.95);
+  border: 1px solid rgb(var(--accent-rgb) / 0.65);
+  background: rgb(var(--accent-rgb) / 0.14);
+  color: var(--text);
   height: 34px;
   padding: 0 12px;
   font-size: 12px;
@@ -576,8 +576,8 @@
 }
 
 .portfolioWorkOverlay__delete:hover {
-  border-color: rgba(255, 80, 80, 0.42);
-  background: rgba(255, 80, 80, 0.12);
+  border-color: rgb(var(--accent-rgb) / 0.85);
+  background: rgb(var(--accent-rgb) / 0.2);
 }
 
 :root[data-theme='light'] .portfolioWorkOverlay__delete {
@@ -699,9 +699,9 @@
 
 .portfolioLinksItem__delete {
   border-radius: 10px;
-  border: 1px solid rgba(255, 80, 80, 0.26);
-  background: rgba(255, 80, 80, 0.08);
-  color: rgba(255, 215, 215, 0.95);
+  border: 1px solid rgb(var(--accent-rgb) / 0.65);
+  background: rgb(var(--accent-rgb) / 0.14);
+  color: var(--text);
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 700;
@@ -709,8 +709,14 @@
 }
 
 .portfolioLinksItem__delete:hover {
-  border-color: rgba(255, 80, 80, 0.42);
-  background: rgba(255, 80, 80, 0.12);
+  border-color: rgb(var(--accent-rgb) / 0.85);
+  background: rgb(var(--accent-rgb) / 0.2);
+}
+
+.portfolioLinksItem__delete:focus-visible,
+.portfolioWorkOverlay__delete:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 :root[data-theme='light'] .portfolioLinksItem__delete {
@@ -1008,11 +1014,12 @@
 }
 
 .portfolioEmpty {
-  border: 1px dashed rgba(255, 255, 255, 0.2);
+  border: 1px dashed var(--border);
+  background: var(--surface1);
   padding: 24px;
   border-radius: 16px;
   text-align: center;
-  opacity: 0.8;
+  opacity: 0.9;
 }
 
 @media (max-width: 720px) {
@@ -1054,4 +1061,18 @@
     flex-direction: column;
     align-items: flex-start;
   }
+}
+
+/* Neutral (non-accent) edit action in overlay */
+:root[data-theme='light'] .portfolioWorkOverlay__edit,
+.portfolioWorkOverlay__edit {
+  background: var(--surface1);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+:root[data-theme='light'] .portfolioWorkOverlay__edit:hover,
+.portfolioWorkOverlay__edit:hover {
+  background: var(--surface2);
+  border-color: var(--border3);
 }

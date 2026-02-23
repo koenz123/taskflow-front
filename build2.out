@@ -1,0 +1,29 @@
+vite v7.3.1 building client environment for production...
+transforming...
+✓ 206 modules transformed.
+[plugin vite:reporter] 
+(!) /root/frontend/taskflow-front/src/shared/logging/logger.ts is dynamically imported by /root/frontend/taskflow-front/src/shared/api/api.ts, /root/frontend/taskflow-front/src/shared/api/api.ts, /root/frontend/taskflow-front/src/shared/api/api.ts, /root/frontend/taskflow-front/src/shared/api/api.ts but also statically imported by /root/frontend/taskflow-front/src/entities/goal/lib/goalApi.ts, /root/frontend/taskflow-front/src/shared/auth/AuthProvider.tsx, /root/frontend/taskflow-front/src/shared/logging/ErrorBoundary.tsx, /root/frontend/taskflow-front/src/shared/logging/initGlobalErrorHandlers.ts, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) /root/frontend/taskflow-front/src/entities/user/lib/useUsers.ts is dynamically imported by /root/frontend/taskflow-front/src/entities/notification/lib/useNotifications.ts but also statically imported by /root/frontend/taskflow-front/src/pages/disputes/DisputeThreadPage.tsx, /root/frontend/taskflow-front/src/pages/disputes/DisputeWorkspacePage.tsx, /root/frontend/taskflow-front/src/pages/disputes/DisputesInboxPage.tsx, /root/frontend/taskflow-front/src/pages/notifications/NotificationsPage.tsx, /root/frontend/taskflow-front/src/pages/portfolio/PortfolioInline.tsx, /root/frontend/taskflow-front/src/pages/portfolio/PortfolioPage.tsx, /root/frontend/taskflow-front/src/pages/profile/CustomerRequestsPage.tsx, /root/frontend/taskflow-front/src/pages/profile/CustomerReviewsPage.tsx, /root/frontend/taskflow-front/src/pages/profile/CustomerTasksPage.tsx, /root/frontend/taskflow-front/src/pages/profile/ProfilePage.tsx, /root/frontend/taskflow-front/src/pages/profile/PublicProfilePage.tsx, /root/frontend/taskflow-front/src/pages/report/ReportProfilePage.tsx, /root/frontend/taskflow-front/src/pages/reviews/ReviewsPage.tsx, /root/frontend/taskflow-front/src/pages/tasks/TaskDetailsPage.tsx, /root/frontend/taskflow-front/src/widgets/header/Header.tsx, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) /root/frontend/taskflow-front/src/entities/task/lib/useApplications.ts is dynamically imported by /root/frontend/taskflow-front/src/shared/auth/AuthProvider.tsx but also statically imported by /root/frontend/taskflow-front/src/pages/profile/CustomerTasksPage.tsx, /root/frontend/taskflow-front/src/pages/profile/ProfilePage.tsx, /root/frontend/taskflow-front/src/pages/tasks/TaskDetailsPage.tsx, /root/frontend/taskflow-front/src/pages/tasks/TasksPage.tsx, /root/frontend/taskflow-front/src/widgets/bottom-nav/BottomNav.tsx, /root/frontend/taskflow-front/src/widgets/sidebar/Sidebar.tsx, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) /root/frontend/taskflow-front/src/entities/contract/lib/useContracts.ts is dynamically imported by /root/frontend/taskflow-front/src/shared/auth/AuthProvider.tsx but also statically imported by /root/frontend/taskflow-front/src/pages/disputes/DisputeThreadPage.tsx, /root/frontend/taskflow-front/src/pages/disputes/DisputeWorkspacePage.tsx, /root/frontend/taskflow-front/src/pages/disputes/DisputesInboxPage.tsx, /root/frontend/taskflow-front/src/pages/portfolio/PortfolioInline.tsx, /root/frontend/taskflow-front/src/pages/portfolio/PortfolioPage.tsx, /root/frontend/taskflow-front/src/pages/profile/CustomerReviewsPage.tsx, /root/frontend/taskflow-front/src/pages/profile/CustomerTasksPage.tsx, /root/frontend/taskflow-front/src/pages/profile/ProfilePage.tsx, /root/frontend/taskflow-front/src/pages/reviews/ReviewsPage.tsx, /root/frontend/taskflow-front/src/pages/tasks/TaskDetailsPage.tsx, /root/frontend/taskflow-front/src/widgets/bottom-nav/BottomNav.tsx, /root/frontend/taskflow-front/src/widgets/sidebar/Sidebar.tsx, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) /root/frontend/taskflow-front/src/entities/taskAssignment/lib/useTaskAssignments.ts is dynamically imported by /root/frontend/taskflow-front/src/shared/auth/AuthProvider.tsx but also statically imported by /root/frontend/taskflow-front/src/pages/disputes/DisputeWorkspacePage.tsx, /root/frontend/taskflow-front/src/pages/profile/CustomerRequestsPage.tsx, /root/frontend/taskflow-front/src/pages/profile/CustomerReviewsPage.tsx, /root/frontend/taskflow-front/src/pages/profile/CustomerTasksPage.tsx, /root/frontend/taskflow-front/src/pages/profile/ProfilePage.tsx, /root/frontend/taskflow-front/src/pages/tasks/TaskDetailsPage.tsx, /root/frontend/taskflow-front/src/pages/tasks/TasksPage.tsx, /root/frontend/taskflow-front/src/widgets/bottom-nav/BottomNav.tsx, /root/frontend/taskflow-front/src/widgets/sidebar/Sidebar.tsx, dynamic import will not move module into another chunk.
+
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.62 kB │ gzip:   0.39 kB
+dist/assets/index-BUYej_WJ.css  187.10 kB │ gzip:  26.85 kB
+dist/assets/index-X07WWRRZ.js   849.49 kB │ gzip: 225.81 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 5.21s

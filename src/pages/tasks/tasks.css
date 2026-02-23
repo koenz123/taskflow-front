@@ -20,8 +20,8 @@
 }
 
 .tasksFilterToggle--active {
-  border-color: rgba(59, 130, 246, 0.5);
-  background: rgba(59, 130, 246, 0.12);
+  border-color: rgb(var(--accent-rgb) / 0.6);
+  background: rgb(var(--accent-rgb) / 0.12);
 }
 
 .tasksMiniForm {
@@ -50,8 +50,8 @@
 }
 
 .tasksMiniForm__item--active {
-  border-color: rgba(59, 130, 246, 0.5);
-  background: rgba(59, 130, 246, 0.16);
+  border-color: rgb(var(--accent-rgb) / 0.6);
+  background: rgb(var(--accent-rgb) / 0.12);
 }
 .tasksHeader {
   display: flex;
@@ -378,8 +378,8 @@
 }
 
 .tasksFilterChip--active {
-  background: rgba(59, 130, 246, 0.25);
-  border-color: rgba(59, 130, 246, 0.6);
+  background: rgb(var(--accent-rgb) / 0.14);
+  border-color: rgb(var(--accent-rgb) / 0.6);
 }
 
 .tasksSort {
@@ -393,15 +393,12 @@
   justify-content: center;
   padding: 10px 14px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background:
-    radial-gradient(120% 180% at 20% 0%, rgba(124, 58, 237, 0.45), transparent 60%),
-    radial-gradient(120% 180% at 90% 10%, rgba(6, 182, 212, 0.35), transparent 62%),
-    rgba(255, 255, 255, 0.045);
-  color: inherit;
+  border: 1px solid rgb(var(--accent-rgb) / 0.8);
+  background: var(--accent);
+  color: var(--accent-ink);
   text-decoration: none;
   white-space: nowrap;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-sm);
 }
 
 .tasksCreateBtn {
@@ -411,8 +408,8 @@
   gap: 8px;
   padding: 10px 14px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  background: var(--surface1);
   color: inherit;
   text-decoration: none;
   white-space: nowrap;
@@ -422,14 +419,14 @@
 
 .tasksCreateBtn:hover {
   transform: scale(1.03);
-  border-color: rgba(255, 255, 255, 0.22);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border3);
+  background: var(--surface2);
 }
 
 .primaryLink:hover {
   transform: scale(1.03);
-  border-color: rgba(255, 255, 255, 0.22);
-  filter: brightness(1.03);
+  border-color: rgb(var(--accent-rgb) / 0.95);
+  filter: brightness(0.99);
 }
 
 .taskGrid {
@@ -697,7 +694,7 @@
 }
 
 .taskCard__desc mark {
-  background: rgba(59, 130, 246, 0.4);
+  background: rgb(var(--accent-rgb) / 0.22);
   color: inherit;
   border-radius: 4px;
   padding: 0 4px;

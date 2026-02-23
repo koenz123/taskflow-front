@@ -10,11 +10,13 @@ import { pickText } from '@/entities/task/lib/taskText'
 import { VideoEmbed } from '@/shared/ui/VideoEmbed'
 import { workRepo } from '@/entities/work/lib/workRepo'
 import { migrateLocalWorks } from '@/entities/work/lib/workMigration'
+import { getWorkDisplayMedia, isWorkEmbeddable } from '@/entities/work/lib/workMedia'
 import type { TranslationKey } from '@/shared/i18n/translations'
 import { AddWorksModal } from '@/features/work/AddWorksModal'
 import './portfolio.css'
 import { StatusPill } from '@/shared/ui/status-pill/StatusPill'
 import { useContracts } from '@/entities/contract/lib/useContracts'
+import { userIdMatches } from '@/shared/auth/userIdAliases'
 
 function initials(fullName: string) {
   const parts = fullName
@@ -33,11 +35,6 @@ function statusLabel(status: string, t: (key: TranslationKey) => string) {
   if (status === 'dispute') return t('task.status.dispute')
   if (status === 'closed') return t('task.status.closed')
   return status.replace('_', ' ')
-}
-
-function isExternalUrl(url?: string) {
-  if (!url) return false
-  return url.startsWith('http://') || url.startsWith('https://')
 }
 
 export function PortfolioPage() {
@@ -106,19 +103,12 @@ export function PortfolioPage() {
 
   const externalWorks = useMemo(() => {
     if (!isExecutor) return []
-    return works
-      .filter((work) => isExternalUrl(work.mediaUrl ?? work.videoUrl))
-      .slice()
-      .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
+    return works.filter((w) => !isWorkEmbeddable(w) && Boolean(getWorkDisplayMedia(w)?.src)).slice().sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
   }, [isExecutor, works])
 
   const carouselWorks = useMemo(() => {
     if (!isExecutor) return []
-    return works.filter((work) => {
-      const url = work.mediaUrl ?? work.videoUrl
-      if (!url) return false
-      return !isExternalUrl(url)
-    })
+    return works.filter((w) => isWorkEmbeddable(w) && Boolean(getWorkDisplayMedia(w)?.src)).slice().sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
   }, [isExecutor, works])
 
   const [carouselIndex, setCarouselIndex] = useState(0)
@@ -135,6 +125,7 @@ export function PortfolioPage() {
   const [editError, setEditError] = useState<string | null>(null)
 
   const overlayWork = workOverlayId ? carouselWorks.find((w) => w.id === workOverlayId) ?? null : null
+  const overlayMedia = overlayWork ? getWorkDisplayMedia(overlayWork) : null
 
   const trackRef = useRef<HTMLDivElement | null>(null)
   const slideRefs = useRef<Array<HTMLDivElement | null>>([])
@@ -252,7 +243,7 @@ export function PortfolioPage() {
         !e.altKey &&
         (e.key === 'ArrowLeft' || e.key === 'ArrowRight')
       ) {
-        if (overlayWork.mediaType === 'photo') return
+        if (overlayMedia?.type === 'photo') return
         const v = overlayVideoRef.current
         if (!v) return
         e.preventDefault()
@@ -270,10 +261,10 @@ export function PortfolioPage() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [overlayWork])
+  }, [overlayMedia?.type, overlayWork])
 
   useEffect(() => {
-    if (!overlayWork || overlayWork.mediaType === 'photo') return
+    if (!overlayWork || overlayMedia?.type === 'photo') return
     const srcVideo = overlaySourceVideoRef.current
     const overlayVideo = overlayVideoRef.current
     if (!overlayVideo) return
@@ -302,7 +293,7 @@ export function PortfolioPage() {
       overlayVideo.addEventListener('loadedmetadata', applySync, { once: true })
       return () => overlayVideo.removeEventListener('loadedmetadata', applySync)
     }
-  }, [overlayWork?.id, overlayWork?.mediaType])
+  }, [overlayMedia?.type, overlayWork?.id])
 
   function closeOverlay() {
     const srcVideo = overlaySourceVideoRef.current
@@ -492,51 +483,62 @@ export function PortfolioPage() {
                   ref={trackRef}
                   onScroll={onTrackScroll}
                 >
-                  {carouselWorks.map((work, index) => (
-                    <div
-                      key={work.id}
-                      className={`portfolioCarousel__slide${index === carouselIndex ? ' portfolioCarousel__slide--active' : ''}`}
-                      ref={(el) => {
-                        slideRefs.current[index] = el
-                      }}
-                      onClick={() => {
-                        goTo(index)
-                        if (work.mediaType === 'photo') {
-                          overlaySourceVideoRef.current = null
-                          setOverlayVideoPlaying(false)
-                          setOverlayVideoControls(false)
-                          setWorkOverlayId(work.id)
-                        }
-                      }}
-                      role="group"
-                      aria-label={`${index + 1} / ${carouselWorks.length}`}
-                    >
-                      <div className="portfolioCarousel__slideInner">
-                        {work.mediaType === 'photo' ? (
-                          <img
-                            src={work.mediaUrl ?? work.videoUrl}
-                            alt={work.title}
-                            className="portfolioCarousel__image"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <div
-                            className={`portfolioVideo${carouselPlayingWorkId === work.id ? ' portfolioVideo--playing' : ''}`}
-                          >
-                            <button
-                              type="button"
-                              className="portfolioVideo__openBtn"
-                              title={locale === 'ru' ? 'Открыть в оверлее' : 'Open in overlay'}
-                              aria-label={locale === 'ru' ? 'Открыть в оверлее' : 'Open in overlay'}
-                              onClick={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                overlaySourceVideoRef.current = videoByWorkIdRef.current.get(work.id) ?? null
-                                setOverlayVideoPlaying(false)
-                                setOverlayVideoControls(false)
-                                setWorkOverlayId(work.id)
+                  {carouselWorks.map((work, index) => {
+                    const media = getWorkDisplayMedia(work)
+                    if (!media) return null
+                    const isPhoto = media.type === 'photo'
+
+                    return (
+                      <div
+                        key={work.id}
+                        className={`portfolioCarousel__slide${index === carouselIndex ? ' portfolioCarousel__slide--active' : ''}`}
+                        ref={(el) => {
+                          slideRefs.current[index] = el
+                        }}
+                        onClick={() => {
+                          goTo(index)
+                          if (isPhoto) {
+                            overlaySourceVideoRef.current = null
+                            setOverlayVideoPlaying(false)
+                            setOverlayVideoControls(false)
+                            setWorkOverlayId(work.id)
+                          }
+                        }}
+                        role="group"
+                        aria-label={`${index + 1} / ${carouselWorks.length}`}
+                      >
+                        <div className="portfolioCarousel__slideInner">
+                          {isPhoto ? (
+                            <img
+                              src={media.src}
+                              data-fallback={media.candidates[1] ?? ''}
+                              onError={(e) => {
+                                const el = e.currentTarget
+                                const fb = String(el.getAttribute('data-fallback') ?? '').trim()
+                                if (!fb || el.src.endsWith(fb)) return
+                                el.setAttribute('data-fallback', '')
+                                el.src = fb
                               }}
-                            >
+                              alt={work.title}
+                              className="portfolioCarousel__image"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className={`portfolioVideo${carouselPlayingWorkId === work.id ? ' portfolioVideo--playing' : ''}`}>
+                              <button
+                                type="button"
+                                className="portfolioVideo__openBtn"
+                                title={locale === 'ru' ? 'Открыть в оверлее' : 'Open in overlay'}
+                                aria-label={locale === 'ru' ? 'Открыть в оверлее' : 'Open in overlay'}
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  overlaySourceVideoRef.current = videoByWorkIdRef.current.get(work.id) ?? null
+                                  setOverlayVideoPlaying(false)
+                                  setOverlayVideoControls(false)
+                                  setWorkOverlayId(work.id)
+                                }}
+                              >
                               <svg
                                 className="portfolioVideo__openIcon"
                                 viewBox="0 0 24 24"
@@ -571,7 +573,8 @@ export function PortfolioPage() {
                               </svg>
                             </button>
                             <VideoEmbed
-                              src={work.mediaUrl ?? work.videoUrl ?? ''}
+                              src={media.src}
+                              sources={media.candidates}
                               controls={carouselControlsWorkId === work.id}
                               videoRef={(el) => {
                                 const map = videoByWorkIdRef.current
@@ -613,9 +616,10 @@ export function PortfolioPage() {
                             ) : null}
                           </div>
                         )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
 
                 {carouselWorks.length > 1 ? (
@@ -778,9 +782,17 @@ export function PortfolioPage() {
             </div>
             <div className="portfolioWorkOverlay__content">
               <div className="portfolioWorkOverlay__media">
-                {overlayWork.mediaType === 'photo' ? (
+                {overlayMedia?.type === 'photo' ? (
                   <img
-                    src={overlayWork.mediaUrl ?? overlayWork.videoUrl}
+                    src={overlayMedia?.src ?? ''}
+                    data-fallback={overlayMedia?.candidates?.[1] ?? ''}
+                    onError={(e) => {
+                      const el = e.currentTarget
+                      const fb = String(el.getAttribute('data-fallback') ?? '').trim()
+                      if (!fb || el.src.endsWith(fb)) return
+                      el.setAttribute('data-fallback', '')
+                      el.src = fb
+                    }}
                     alt={overlayWork.title}
                     className="portfolioWorkOverlay__image"
                     loading="lazy"
@@ -789,7 +801,8 @@ export function PortfolioPage() {
                   <div className="portfolioWorkOverlay__video">
                     <div className={`portfolioVideo${overlayVideoPlaying ? ' portfolioVideo--playing' : ''}`}>
                       <VideoEmbed
-                        src={overlayWork.mediaUrl ?? overlayWork.videoUrl ?? ''}
+                        src={overlayMedia?.src ?? ''}
+                        sources={overlayMedia?.candidates ?? undefined}
                         controls={overlayVideoControls}
                         videoRef={overlayVideoRef}
                         onPlay={() => setOverlayVideoPlaying(true)}
@@ -844,8 +857,8 @@ export function PortfolioPage() {
                 )}
                 <div className="portfolioWorkOverlay__meta">
                   {overlayWork.createdAt ? <span>{new Date(overlayWork.createdAt).toLocaleDateString()}</span> : null}
-                  {(overlayWork.mediaUrl ?? overlayWork.videoUrl) ? (
-                    <a href={overlayWork.mediaUrl ?? overlayWork.videoUrl} target="_blank" rel="noreferrer">
+                  {overlayMedia?.src ? (
+                    <a href={overlayMedia.src} target="_blank" rel="noreferrer">
                       {t('profile.videoLink')}
                     </a>
                   ) : null}
@@ -866,7 +879,7 @@ export function PortfolioPage() {
           </div>
           <ul className="portfolioLinksList">
             {externalWorks.map((work) => {
-              const url = work.mediaUrl ?? work.videoUrl ?? ''
+              const url = getWorkDisplayMedia(work)?.src ?? (work.mediaUrl ?? work.videoUrl ?? '')
               return (
                 <li key={work.id} className="portfolioLinksItem">
                   <div className="portfolioLinksItem__top">
@@ -921,10 +934,10 @@ export function PortfolioPage() {
           <ul className="portfolioTasksList">
             {completedTasks.map((task) => {
               const assignedUserId = task.assignedExecutorIds[0] ?? null
-              const assignedUser = assignedUserId ? users.find((u) => u.id === assignedUserId) ?? null : null
+              const assignedUser = assignedUserId ? users.find((u) => userIdMatches(u, assignedUserId)) ?? null : null
               const author =
                 task.createdByUserId && task.createdByUserId !== owner.id
-                  ? users.find((u) => u.id === task.createdByUserId) ?? null
+                  ? users.find((u) => userIdMatches(u, task.createdByUserId)) ?? null
                   : null
 
               const isExpanded = expandedTaskId === task.id

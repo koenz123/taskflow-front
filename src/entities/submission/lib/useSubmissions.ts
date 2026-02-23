@@ -42,7 +42,9 @@ export async function fetchSubmissions() {
     return
   }
   try {
-    apiSnapshot = await api.get<Submission[]>('/submissions')
+    const raw = await api.get<any>('/submissions')
+    const list = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : Array.isArray(raw?.data) ? raw.data : []
+    apiSnapshot = (list as unknown[]).map((x) => submissionRepo.normalize(x)).filter(Boolean) as Submission[]
     apiHasLoaded = true
   } catch {
     // keep previous
@@ -55,15 +57,6 @@ export async function refreshSubmissions() {
   if (!USE_API) return
   apiHasLoaded = false
   await fetchSubmissions()
-}
-
-function asSubmission(input: unknown): Submission | null {
-  if (!input || typeof input !== 'object') return null
-  const x = input as any
-  if (typeof x.id !== 'string' || typeof x.contractId !== 'string') return null
-  if (typeof x.createdAt !== 'string') return null
-  if (!Array.isArray(x.files)) return null
-  return x as Submission
 }
 
 export async function createSubmissionApi(input: { contractId: string; message?: string; files: Submission['files'] }) {
@@ -88,7 +81,11 @@ export async function createSubmissionApi(input: { contractId: string; message?:
   for (const run of attempts) {
     try {
       const raw = await run()
-      const s = asSubmission(raw)
+      const s =
+        submissionRepo.normalize(raw) ??
+        submissionRepo.normalize((raw as any)?.submission) ??
+        submissionRepo.normalize((raw as any)?.data) ??
+        submissionRepo.normalize((raw as any)?.result)
       if (s) {
         apiSnapshot = apiSnapshot.concat([s])
         apiHasLoaded = true

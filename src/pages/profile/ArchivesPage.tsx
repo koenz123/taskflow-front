@@ -1,9 +1,8 @@
-import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { paths, taskDetailsPath, taskEditPath } from '@/app/router/paths'
 import { useI18n } from '@/shared/i18n/I18nContext'
 import { useAuth } from '@/shared/auth/AuthContext'
-import { useDevMode } from '@/shared/dev/devMode'
 import { useTasks } from '@/entities/task/lib/useTasks'
 import { pickText } from '@/entities/task/lib/taskText'
 import { taskRepo } from '@/entities/task/lib/taskRepo'
@@ -12,12 +11,12 @@ import { balanceFreezeRepo } from '@/entities/user/lib/balanceFreezeRepo'
 import { taskAssignmentRepo } from '@/entities/taskAssignment/lib/taskAssignmentRepo'
 import './profile.css'
 import { StatusPill } from '@/shared/ui/status-pill/StatusPill'
+import { Icon } from '@/shared/ui/icon/Icon'
 
 export function ArchivesPage() {
   const { t, locale } = useI18n()
   const auth = useAuth()
   const user0 = auth.user!
-  const devMode = useDevMode()
   const navigate = useNavigate()
   const tasks = useTasks()
   const [confirmRepostTaskId, setConfirmRepostTaskId] = useState<string | null>(null)
@@ -48,11 +47,6 @@ export function ArchivesPage() {
         </div>
       </main>
     )
-  }
-
-  // Archive is a dev-only feature.
-  if (!devMode.enabled) {
-    return <Navigate to={paths.customerTasks} replace />
   }
 
   const handleRepost = (taskId: string) => {
@@ -116,7 +110,8 @@ export function ArchivesPage() {
                     {task.dueDate ? (
                       <div className="customerTasksItemBadges">
                         <span className="customerTasksItemBadge">
-                          📅 {t('tasks.due')}: {task.dueDate}
+                          <Icon name="calendar" size={16} className="iconInline" />
+                          {t('tasks.due')}: {task.dueDate}
                         </span>
                       </div>
                     ) : null}

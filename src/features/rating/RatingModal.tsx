@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useI18n } from '@/shared/i18n/I18nContext'
 import './rating-modal.css'
+import { Icon } from '@/shared/ui/icon/Icon'
 
 type Props = {
   open: boolean
@@ -54,7 +55,7 @@ export function RatingModal({ open, title, subjectName, onClose, onSubmit }: Pro
                   onClick={() => setRating(value)}
                   aria-label={`${value}`}
                 >
-                  ★
+                  <Icon name="star" size={18} />
                 </button>
               )
             })}

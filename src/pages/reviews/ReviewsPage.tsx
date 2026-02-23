@@ -12,6 +12,7 @@ import { pickText } from '@/entities/task/lib/taskText'
 import { Pagination } from '@/shared/ui/pagination/Pagination'
 import { getBlob } from '@/shared/lib/blobStore'
 import './reviews.css'
+import { Icon } from '@/shared/ui/icon/Icon'
 
 type ReviewVM = {
   id: string
@@ -37,9 +38,16 @@ type ReviewVM = {
   } | null
 }
 
-function starsText(value: number) {
-  const v = Math.max(1, Math.min(5, Math.round(value)))
-  return '★'.repeat(v) + '☆'.repeat(5 - v)
+function Stars(props: { value: number }) {
+  const v = Math.max(1, Math.min(5, Math.round(props.value)))
+  return (
+    <span className="reviewStars" aria-hidden="true">
+      {Array.from({ length: 5 }).map((_, idx) => {
+        const active = idx + 1 <= v
+        return <Icon key={idx} name="star" size={16} className={active ? 'reviewStar reviewStar--on' : 'reviewStar'} />
+      })}
+    </span>
+  )
 }
 
 function formatBudget(amount?: number, currency?: string) {
@@ -240,7 +248,7 @@ export function ReviewsPage() {
                 <article key={r.id} className="reviewCard">
                   <div className="reviewCard__top">
                     <div className="reviewCard__rating" aria-label={locale === 'ru' ? `Оценка ${r.rating} из 5` : `Rating ${r.rating} of 5`}>
-                      {starsText(r.rating)} <span className="reviewCard__ratingNum">{r.rating}/5</span>
+                      <Stars value={r.rating} /> <span className="reviewCard__ratingNum">{r.rating}/5</span>
                     </div>
                     <div className="reviewCard__date">{createdLabel}</div>
                   </div>

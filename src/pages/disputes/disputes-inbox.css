@@ -62,8 +62,8 @@
 .disputesInboxInput:focus,
 .disputesInboxSelect:focus,
 .disputesInboxFilters .customSelectButton:focus-visible {
-  border-color: var(--border3);
-  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.12);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  box-shadow: 0 0 0 4px var(--ring);
 }
 
 /* Make CustomSelect labels match inbox style */

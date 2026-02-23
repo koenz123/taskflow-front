@@ -34,7 +34,7 @@
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  color: rgba(124, 58, 237, 0.8);
+  color: var(--accent);
   font-weight: 700;
 }
 
@@ -83,7 +83,7 @@
   width: 100%;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--card2);
+  background: var(--surface1);
   color: var(--text);
   padding: 12px;
   font-size: 13px;
@@ -95,12 +95,13 @@
 }
 
 .revisionModal__detail::placeholder {
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--muted2);
 }
 
 .revisionModal__detail:focus {
   outline: none;
-  border-color: rgba(124, 58, 237, 0.55);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  box-shadow: 0 0 0 4px var(--ring);
 }
 
 .revisionModal__footer {
@@ -124,15 +125,15 @@
 }
 
 .revisionModal__cancel:hover {
-  border-color: rgba(255, 255, 255, 0.22);
-  background: var(--card2);
+  border-color: var(--border3);
+  background: var(--surface2);
 }
 
 .revisionModal__submit {
   border-radius: 10px;
-  border: 1px solid rgba(124, 58, 237, 0.65);
-  background: rgba(124, 58, 237, 0.18);
-  color: var(--text);
+  border: 1px solid rgb(var(--accent-rgb) / 0.75);
+  background: var(--accent);
+  color: var(--accent-ink);
   padding: 10px 20px;
   font-size: 13px;
   font-weight: 700;
@@ -141,8 +142,9 @@
 }
 
 .revisionModal__submit:hover {
-  background: rgba(124, 58, 237, 0.28);
-  border-color: rgba(124, 58, 237, 0.9);
+  filter: brightness(0.99);
+  background: var(--accent);
+  border-color: rgb(var(--accent-rgb) / 0.95);
 }
 
 .revisionInfoOverlay {
@@ -168,14 +170,14 @@
   margin: 0 0 8px 0;
   font-size: 16px;
   font-weight: 750;
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--text);
 }
 
 .revisionInfoModal__text {
   margin: 0;
   font-size: 13px;
   line-height: 1.45;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--muted);
 }
 
 .revisionInfoModal__actions {
@@ -186,9 +188,9 @@
 
 .revisionInfoModal__button {
   border-radius: 10px;
-  border: 1px solid rgba(124, 58, 237, 0.65);
-  background: rgba(124, 58, 237, 0.18);
-  color: var(--text);
+  border: 1px solid rgb(var(--accent-rgb) / 0.75);
+  background: var(--accent);
+  color: var(--accent-ink);
   padding: 10px 16px;
   font-size: 13px;
   font-weight: 700;
@@ -197,7 +199,8 @@
 }
 
 .revisionInfoModal__button:hover {
-  background: rgba(124, 58, 237, 0.28);
-  border-color: rgba(124, 58, 237, 0.9);
+  filter: brightness(0.99);
+  background: var(--accent);
+  border-color: rgb(var(--accent-rgb) / 0.95);
 }
 

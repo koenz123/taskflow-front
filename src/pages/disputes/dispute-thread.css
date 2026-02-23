@@ -122,8 +122,8 @@
 }
 
 .disputeMsg--mine .disputeMsg__bubble {
-  border-color: rgba(124, 58, 237, 0.35);
-  background: rgba(124, 58, 237, 0.12);
+  border-color: rgb(var(--accent-rgb) / 0.38);
+  background: rgb(var(--accent-rgb) / 0.1);
 }
 
 .disputeChatComposer {
@@ -138,7 +138,7 @@
   width: 100%;
   border-radius: 14px;
   border: 1px solid var(--border);
-  background: var(--card2);
+  background: var(--surface1);
   color: var(--text);
   padding: 10px 12px;
   resize: vertical;
@@ -146,16 +146,16 @@
 }
 
 .disputeChatInput:focus {
-  border-color: var(--border3);
-  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.14);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  box-shadow: 0 0 0 4px var(--ring);
 }
 
 .disputeChatSend {
   justify-self: start;
   border-radius: 12px;
-  border: 1px solid rgba(124, 58, 237, 0.55);
-  background: rgba(124, 58, 237, 0.18);
-  color: var(--text);
+  border: 1px solid rgb(var(--accent-rgb) / 0.75);
+  background: var(--accent);
+  color: var(--accent-ink);
   padding: 10px 12px;
   cursor: pointer;
   font-weight: 650;
@@ -164,8 +164,9 @@
 
 .disputeChatSend:hover {
   transform: translateY(-1px);
-  border-color: rgba(124, 58, 237, 0.7);
-  background: rgba(124, 58, 237, 0.22);
+  border-color: rgb(var(--accent-rgb) / 0.95);
+  background: var(--accent);
+  filter: brightness(0.99);
 }
 
 .disputeChatSend:disabled {

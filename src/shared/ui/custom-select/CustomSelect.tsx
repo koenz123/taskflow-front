@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import './custom-select.css'
+import { Icon } from '@/shared/ui/icon/Icon'
 
 interface CustomSelectProps<T extends string> {
   value: T
@@ -164,7 +165,7 @@ export function CustomSelect<T extends string>({ value, onChange, options, label
                 <span className="customSelectOptionLabel">{option.label}</span>
                 {option.value === value ? (
                   <span className="customSelectCheck" aria-hidden="true">
-                    ✓
+                    <Icon name="check" size={16} />
                   </span>
                 ) : null}
               </button>

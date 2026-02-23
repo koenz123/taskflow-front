@@ -19,7 +19,7 @@
   padding: 12px 14px;
   border-radius: 14px;
   border: 1px solid var(--border);
-  background: var(--card2);
+  background: var(--surface1);
   color: var(--text);
   cursor: pointer;
   text-align: left;
@@ -28,7 +28,7 @@
 
 .customSelectButton:hover {
   border-color: var(--border3);
-  background: var(--card);
+  background: var(--surface2);
 }
 
 .customSelectButton:disabled {
@@ -38,17 +38,17 @@
 
 .customSelectButton:disabled:hover {
   border-color: var(--border);
-  background: var(--card2);
+  background: var(--surface1);
 }
 
 .customSelectButton:focus-visible {
-  border-color: rgba(124, 58, 237, 0.45);
-  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.14);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  box-shadow: 0 0 0 4px var(--ring);
 }
 
 .customSelectButton--open {
-  border-color: rgba(124, 58, 237, 0.45);
-  box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.14);
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  box-shadow: 0 0 0 4px var(--ring);
 }
 
 .customSelectValue {
@@ -142,12 +142,12 @@
 }
 
 .customSelectOption--selected {
-  background: rgba(124, 58, 237, 0.08);
-  border-color: rgba(124, 58, 237, 0.35);
+  background: rgb(var(--accent-rgb) / 0.08);
+  border-color: rgb(var(--accent-rgb) / 0.35);
 }
 
 .customSelectOption--selected:hover {
-  background: rgba(124, 58, 237, 0.12);
+  background: rgb(var(--accent-rgb) / 0.12);
 }
 
 .customSelectCheck {

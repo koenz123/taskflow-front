@@ -2,18 +2,17 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { paths } from '@/app/router/paths'
 import { useI18n } from '@/shared/i18n/I18nContext'
-import { TelegramLoginButton } from '@/shared/auth/TelegramLoginButton'
 import { useAuth } from '@/shared/auth/AuthProvider'
-import { useDevMode } from '@/shared/dev/devMode'
+import { GoogleSignInButton } from '@/shared/auth/GoogleSignInButton'
+import { TelegramSignInButton } from '@/shared/auth/TelegramSignInButton'
 
 function registerLink(role: 'customer' | 'executor') {
   return `${paths.register}?role=${role}`
 }
 
 export function LoginPage() {
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const auth = useAuth()
-  const devMode = useDevMode()
   const location = useLocation()
   const navigate = useNavigate()
   const backTo = useMemo(() => {
@@ -110,18 +109,32 @@ export function LoginPage() {
           {t('auth.signIn')}
         </button>
 
-        <button
-          type="button"
-          className="authBtn authBtn--google"
-          onClick={() => window.open('https://accounts.google.com/signin', '_blank')}
-        >
-          {t('auth.signInWithGoogle')}
-        </button>
+        <div className="authSocial" aria-label={locale === 'ru' ? 'Быстрый вход' : 'Quick sign-in'}>
+          <div className="authSocialHeader">
+            <div className="authSocialTitle">{locale === 'ru' ? 'Быстрый вход' : 'Quick sign-in'}</div>
+            <div className="authSocialHint">
+              {locale === 'ru' ? 'Без пароля — в один клик.' : 'No password — one click.'}
+            </div>
+          </div>
 
-        { (
-          <div style={{ marginTop: 16 }}>
-            <TelegramLoginButton
+          {import.meta.env.VITE_GOOGLE_CLIENT_ID ? (
+            <div className="authSocialItem authSocialItem--google">
+              <GoogleSignInButton
+                clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}
+                locale={locale === 'ru' ? 'ru' : 'en'}
+                onCredential={async (credential) => {
+                  setFormError(null)
+                  await auth.signInWithGoogle(credential, { remember: rememberMe })
+                }}
+                onError={() => setFormError(t('auth.googleLoginFailed'))}
+              />
+            </div>
+          ) : null}
+
+          <div className="authSocialItem authSocialItem--telegram">
+            <TelegramSignInButton
               botName={import.meta.env.VITE_TELEGRAM_BOT_NAME}
+              locale={locale === 'ru' ? 'ru' : 'en'}
               onAuth={async (tgUser) => {
                 setFormError(null)
                 try {
@@ -145,7 +158,7 @@ export function LoginPage() {
               }}
             />
           </div>
-        )}
+        </div>
 
         <p className="authFooterText">
           {t('auth.noAccountJoin')}{' '}
@@ -159,19 +172,6 @@ export function LoginPage() {
           .
         </p>
 
-        <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.10)' }}>
-          <button
-            type="button"
-            className="authBtn"
-            onClick={() => devMode.setEnabled(!devMode.enabled)}
-            aria-pressed={devMode.enabled}
-          >
-            Dev mode: {devMode.enabled ? 'ON' : 'OFF'}
-          </button>
-          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.75, lineHeight: 1.45 }}>
-            When Dev mode is ON, registration does not require email verification.
-          </div>
-        </div>
       </form>
     </div>
   )

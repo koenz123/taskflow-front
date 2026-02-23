@@ -101,6 +101,21 @@
   color: var(--text);
 }
 
+.reviewStars {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  margin-right: 2px;
+}
+
+.reviewStar {
+  opacity: 0.45;
+}
+
+.reviewStar--on {
+  opacity: 0.95;
+}
+
 .reviewCard__ratingNum {
   margin-left: 8px;
   font-size: 12px;
@@ -280,7 +295,7 @@
 }
 
 .reviewCard__fileLink {
-  color: rgba(124, 58, 237, 0.95);
+  color: var(--accent);
   text-decoration: none;
   word-break: break-word;
 }

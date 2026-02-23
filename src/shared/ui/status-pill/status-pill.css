@@ -30,9 +30,9 @@
 }
 
 .statusPill--review {
-  background: rgba(124, 58, 237, 0.14);
-  border-color: rgba(124, 58, 237, 0.35);
-  color: rgba(216, 180, 254, 0.95);
+  background: rgb(var(--accent-rgb) / 0.14);
+  border-color: rgb(var(--accent-rgb) / 0.4);
+  color: var(--text);
 }
 
 .statusPill--dispute {
@@ -85,9 +85,9 @@
 }
 
 :root[data-theme='light'] .statusPill--review {
-  background: rgba(124, 58, 237, 0.22);
-  border-color: rgba(124, 58, 237, 0.55);
-  color: rgba(76, 29, 149, 0.95);
+  background: rgb(var(--accent-rgb) / 0.22);
+  border-color: rgb(var(--accent-rgb) / 0.6);
+  color: rgba(31, 41, 55, 0.95);
 }
 
 :root[data-theme='light'] .statusPill--dispute {

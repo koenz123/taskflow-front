@@ -8,24 +8,14 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  margin-left: 240px;
+  margin-left: 0;
   min-width: 0;
-  transition: margin-left 300ms ease;
 }
 
 .appShell__content {
   padding: 32px;
   width: 100%;
   flex: 1;
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-/* Адаптация под свернутый сайдбар */
-@media (min-width: 1025px) {
-  .sidebar--collapsed ~ .appShell__main {
-    margin-left: 64px;
-  }
 }
 
 /* Адаптация для планшетов и мобильных */

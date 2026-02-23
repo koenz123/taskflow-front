@@ -14,7 +14,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   if (auth.status === 'loading') return null
   if (auth.status === 'unauthenticated') {
     const backTo = `${location.pathname}${location.search}`
-    return <Navigate to={`${paths.register}?backTo=${encodeURIComponent(backTo)}`} replace />
+    return <Navigate to={`${paths.login}?backTo=${encodeURIComponent(backTo)}`} replace />
   }
   return <>{children}</>
 }
