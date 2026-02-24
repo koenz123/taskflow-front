@@ -156,17 +156,20 @@ export function useDisputeMessages(disputeId?: string | null) {
       const onSession = () => {
         void refreshDisputeMessages(id)
       }
+      const onVisible = () => {
+        if (document.visibilityState === 'visible' && id) void refreshDisputeMessages(id)
+      }
       if (apiPollId === null && typeof window !== 'undefined') {
         apiPollId = window.setInterval(() => {
           if (document.visibilityState !== 'visible') return
-          // refresh only disputes that have active subscribers
           for (const key of subsByDisputeId.keys()) {
             void refreshDisputeMessages(key)
           }
-        }, 30_000)
+        }, 3_000)
       }
       window.addEventListener('ui-create-works.session.change', onSession)
       window.addEventListener('storage', onSession)
+      document.addEventListener('visibilitychange', onVisible)
       return () => {
         set!.delete(cb)
         if (set!.size === 0) subsByDisputeId.delete(id)
@@ -176,6 +179,7 @@ export function useDisputeMessages(disputeId?: string | null) {
         }
         window.removeEventListener('ui-create-works.session.change', onSession)
         window.removeEventListener('storage', onSession)
+        document.removeEventListener('visibilitychange', onVisible)
       }
     }
     const getSnapshot = () => (id ? apiSnapshotByDisputeId.get(id) ?? EMPTY : EMPTY)

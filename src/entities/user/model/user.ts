@@ -7,14 +7,6 @@ export type SocialPlatform =
   | 'telegram'
   | 'whatsapp'
   | 'vk'
-  | 'x'
-  | 'facebook'
-  | 'linkedin'
-  | 'discord'
-  | 'twitch'
-  | 'snapchat'
-  | 'pinterest'
-  | 'reddit'
 
 export type User = {
   id: string

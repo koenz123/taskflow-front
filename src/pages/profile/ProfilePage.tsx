@@ -28,7 +28,7 @@ import {
   selectApplicationApi,
   useApplications,
 } from '@/entities/task/lib/useApplications'
-import { getUsdRubRateCachedOrFallback, refreshUsdRubRate } from '@/shared/lib/usdRubRate'
+import { getUsdRubRateCachedOrFallback, refreshUsdRubRate, taskEscrowAmountInRub } from '@/shared/lib/usdRubRate'
 import { timeAgo } from '@/shared/lib/timeAgo'
 import { createRatingApi, refreshRatings, useRatings } from '@/entities/rating/lib/useRatings'
 import { RatingModal } from '@/features/rating/RatingModal'
@@ -72,6 +72,7 @@ export function ProfilePage() {
   const auth = useAuth()
   const toast = useToast()
   const telegramUserId = auth.user?.telegramUserId ?? null
+  const userEmail = auth.user?.email ?? null
   const toastUi = (msg: string, tone?: 'success' | 'info' | 'error') => toast.showToast({ message: msg, tone })
   const [searchParams] = useSearchParams()
   const tasks = useTasks()
@@ -96,6 +97,7 @@ export function ProfilePage() {
   const [balanceMessage, setBalanceMessage] = useState<string | null>(null)
   const [withdrawAmount, setWithdrawAmount] = useState('')
   const [withdrawMessage, setWithdrawMessage] = useState<string | null>(null)
+  const [insufficientBalanceOpen, setInsufficientBalanceOpen] = useState(false)
   const [noStartPrompt, setNoStartPrompt] = useState<null | { applicationId: string; count: number }>(null)
   const [violationsHelpOpen, setViolationsHelpOpen] = useState(false)
   const balanceFormatter = useMemo(
@@ -119,7 +121,8 @@ export function ProfilePage() {
   }, [])
 
   const balanceInUiCurrency = useMemo(() => {
-    return locale === 'ru' ? balance * usdRubRate : balance
+    // Server balance is stored in RUB. Convert only for UI.
+    return locale === 'ru' ? balance : balance / usdRubRate
   }, [balance, locale, usdRubRate])
 
   const handleRejectApplication = async (applicationId: string) => {
@@ -127,16 +130,16 @@ export function ProfilePage() {
       try {
         await rejectApplicationApi(applicationId)
         await Promise.all([refreshApplications(), refreshNotifications()])
-        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.applicationRejected'), tone: 'info' })
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.applicationRejected'), tone: 'info' })
       } catch (e) {
         const msg = e instanceof ApiError ? `${e.status ?? 'ERR'} ${String(e.message)}` : (locale === 'ru' ? 'Не удалось отклонить отклик.' : 'Failed to reject.')
-        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
       }
       return
     }
 
     applicationRepo.reject(applicationId)
-    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.applicationRejected'), tone: 'info' })
+    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.applicationRejected'), tone: 'info' })
   }
 
   const handleAssignApplication = async (applicationId: string, opts?: { bypassNoStartConfirm?: boolean }) => {
@@ -173,26 +176,30 @@ export function ProfilePage() {
           refreshAssignments(),
           refreshNotifications(),
         ])
-        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.executorAssigned'), tone: 'success' })
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.executorAssigned'), tone: 'success' })
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) {
           void notifyToTelegramAndUi({
             toast: toastUi,
             telegramUserId,
+            email: userEmail,
             text: locale === 'ru' ? 'Сессия истекла. Войдите снова.' : 'Session expired. Please sign in again.',
             tone: 'error',
           })
           navigate(paths.login)
+        } else if (e instanceof ApiError && e.status === 409 && e.message === 'insufficient_balance') {
+          setInsufficientBalanceOpen(true)
+          return
         } else {
           const msg = e instanceof ApiError ? `${e.status ?? 'ERR'} ${String(e.message)}` : (locale === 'ru' ? 'Не удалось назначить исполнителя.' : 'Failed to assign.')
-          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
         }
       }
       return
     }
 
     const existingContract = contractRepo.getForTaskExecutor(task.id, app.executorUserId)
-    const amount = task.budgetAmount ?? 0
+    const amount = taskEscrowAmountInRub(task)
     if (!existingContract && amount > 0 && !balanceRepo.withdraw(task.createdByUserId, amount)) {
       return
     }
@@ -253,7 +260,7 @@ export function ProfilePage() {
       }
     }
 
-    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.executorAssigned'), tone: 'success' })
+    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.executorAssigned'), tone: 'success' })
   }
 
   const handleWithdraw = () => {
@@ -263,17 +270,17 @@ export function ProfilePage() {
       setWithdrawMessage(t('profile.balance.withdrawError'))
       return
     }
-    const amountUsd = locale === 'ru' ? amountUi / usdRubRate : amountUi
+    const amountRub = locale === 'ru' ? amountUi : amountUi * usdRubRate
     if (USE_API) {
       void (async () => {
         try {
           await serverBalanceRepo.refresh()
           const current = serverBalanceRepo.get()
-          if (current < amountUsd) {
+          if (current < amountRub) {
             setWithdrawMessage(t('profile.balance.insufficient'))
             return
           }
-          await serverBalanceRepo.adjust(-amountUsd, 'withdraw')
+          await serverBalanceRepo.adjust(-amountRub, 'withdraw')
           setWithdrawAmount('')
           setWithdrawMessage(t('profile.balance.withdrawSuccess'))
         } catch {
@@ -282,7 +289,7 @@ export function ProfilePage() {
       })()
       return
     }
-    if (!balanceRepo.withdraw(user.id, amountUsd)) {
+    if (!balanceRepo.withdraw(user.id, amountRub)) {
       setWithdrawMessage(t('profile.balance.insufficient'))
       return
     }
@@ -1367,6 +1374,7 @@ export function ProfilePage() {
                                         void notifyToTelegramAndUi({
                                           toast: toastUi,
                                           telegramUserId,
+                                          email: userEmail,
                                           text: t('toast.workStarted'),
                                           tone: 'success',
                                         })
@@ -1377,11 +1385,11 @@ export function ProfilePage() {
                                             : locale === 'ru'
                                               ? 'Не удалось начать работу.'
                                               : 'Failed to start work.'
-                                        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                                        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
                                       }
                                     } else {
                                       taskAssignmentRepo.startWork(task.id, user.id)
-                                      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.workStarted'), tone: 'success' })
+                                      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.workStarted'), tone: 'success' })
                                     }
                                   }}
                                   title={locale === 'ru' ? 'Начать работу' : 'Start work'}
@@ -1690,11 +1698,11 @@ export function ProfilePage() {
                             setBalanceMessage(t('profile.balance.error'))
                             return
                           }
-                          const amountUsd = locale === 'ru' ? amountUi / usdRubRate : amountUi
+                          const amountRub = locale === 'ru' ? amountUi : amountUi * usdRubRate
                           if (USE_API) {
                             void (async () => {
                               try {
-                                await serverBalanceRepo.adjust(amountUsd, 'topup')
+                                await serverBalanceRepo.adjust(amountRub, 'topup')
                                 setDepositAmount('')
                                 setBalanceMessage(t('profile.balance.success'))
                               } catch {
@@ -1703,7 +1711,7 @@ export function ProfilePage() {
                             })()
                             return
                           }
-                          balanceRepo.deposit(user.id, amountUsd)
+                          balanceRepo.deposit(user.id, amountRub)
                           setDepositAmount('')
                           setBalanceMessage(t('profile.balance.success'))
                         }}
@@ -1848,6 +1856,46 @@ export function ProfilePage() {
         </div>
       ) : null}
 
+      {insufficientBalanceOpen ? (
+        <div
+          className="profileModalOverlay"
+          role="alertdialog"
+          aria-modal="true"
+          aria-label={t('profile.balance.insufficient')}
+          onClick={() => setInsufficientBalanceOpen(false)}
+        >
+          <div className="profileModal profileModal--compact" onClick={(e) => e.stopPropagation()}>
+            <div className="profileModalHeader">
+              <h2 className="profileModalTitle">{locale === 'ru' ? 'Недостаточно средств' : 'Insufficient funds'}</h2>
+              <button
+                type="button"
+                className="profileModalClose"
+                onClick={() => setInsufficientBalanceOpen(false)}
+                aria-label={t('common.cancel')}
+              >
+                ×
+              </button>
+            </div>
+            <div className="profileBalanceMessage">{t('profile.balance.insufficient')}</div>
+            <div className="profileModalActions">
+              <button type="button" className="profileBtn" onClick={() => setInsufficientBalanceOpen(false)}>
+                {t('common.cancel')}
+              </button>
+              <Link
+                className="profileBtn profileBtn--accent"
+                to={`${paths.profile}?tab=balance`}
+                onClick={() => {
+                  setInsufficientBalanceOpen(false)
+                  setOpenList(null)
+                }}
+              >
+                {t('profile.balance.add')}
+              </Link>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <RatingModal
         open={Boolean(rateContractId)}
         subjectName={(() => {
@@ -1868,6 +1916,7 @@ export function ProfilePage() {
                 void notifyToTelegramAndUi({
                   toast: toastUi,
                   telegramUserId,
+                  email: userEmail,
                   text: locale === 'ru' ? 'Оценка отправлена.' : 'Rating submitted.',
                   tone: 'success',
                 })
@@ -1878,7 +1927,7 @@ export function ProfilePage() {
                     : locale === 'ru'
                       ? 'Не удалось отправить оценку.'
                       : 'Failed to submit rating.'
-                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
                 return
               } finally {
                 setRateContractId(null)
@@ -1922,6 +1971,7 @@ export function ProfilePage() {
                 void notifyToTelegramAndUi({
                   toast: toastUi,
                   telegramUserId,
+                  email: userEmail,
                   text: locale === 'ru' ? 'Оценка отправлена.' : 'Rating submitted.',
                   tone: 'success',
                 })
@@ -1932,7 +1982,7 @@ export function ProfilePage() {
                     : locale === 'ru'
                       ? 'Не удалось отправить оценку.'
                       : 'Failed to submit rating.'
-                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
                 return
               } finally {
                 setRateExecutorContractId(null)

@@ -19,6 +19,9 @@ let apiStore: { subs: Set<() => void> } = { subs: new Set() }
 let apiRefreshing = false
 let apiHasLoaded = false
 let apiLoadedForToken: string | null = null
+let apiPollId: ReturnType<typeof setInterval> | null = null
+
+const POLL_MS = 3_000
 
 function notifyApi() {
   for (const cb of apiStore.subs) cb()
@@ -111,12 +114,27 @@ function subscribeApi(cb: () => void) {
   const onSession = () => {
     void refreshSubmissions()
   }
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') void refreshSubmissions()
+  }
+  if (apiPollId === null && typeof window !== 'undefined') {
+    apiPollId = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      void refreshSubmissions()
+    }, POLL_MS)
+  }
   window.addEventListener('ui-create-works.session.change', onSession)
   window.addEventListener('storage', onSession)
+  document.addEventListener('visibilitychange', onVisible)
   return () => {
     apiStore.subs.delete(cb)
+    if (apiStore.subs.size === 0 && apiPollId !== null) {
+      clearInterval(apiPollId)
+      apiPollId = null
+    }
     window.removeEventListener('ui-create-works.session.change', onSession)
     window.removeEventListener('storage', onSession)
+    document.removeEventListener('visibilitychange', onVisible)
   }
 }
 

@@ -37,6 +37,7 @@ import { useToast } from '@/shared/ui/toast/ToastProvider'
 import { notifyToTelegramAndUi } from '@/shared/notify/notify'
 import { ApiError } from '@/shared/api/api'
 import { Icon } from '@/shared/ui/icon/Icon'
+import { taskEscrowAmountInRub } from '@/shared/lib/usdRubRate'
 
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
@@ -65,6 +66,7 @@ export function CustomerTasksPage() {
   const user = auth.user!
   const toast = useToast()
   const telegramUserId = auth.user?.telegramUserId ?? null
+  const userEmail = auth.user?.email ?? null
   const toastUi = (msg: string, tone?: 'success' | 'info' | 'error') => toast.showToast({ message: msg, tone })
   const navigate = useNavigate()
   const tasks = useTasks()
@@ -281,7 +283,7 @@ export function CustomerTasksPage() {
           refreshAssignments(),
           refreshNotifications(),
         ])
-        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.executorAssigned'), tone: 'success' })
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.executorAssigned'), tone: 'success' })
       } catch (e) {
         if (e instanceof ApiError && e.status === 409 && e.message === 'insufficient_balance') {
           const taskId = activeTask?.id ?? applicationsOverlayTaskId ?? app.taskId
@@ -294,7 +296,7 @@ export function CustomerTasksPage() {
             : locale === 'ru'
               ? 'Не удалось назначить исполнителя.'
               : 'Failed to assign executor.'
-        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
       }
       return
     }
@@ -303,7 +305,7 @@ export function CustomerTasksPage() {
 
     const customerId = activeTask.createdByUserId
     const existingContract = contractRepo.getForTaskExecutor(activeTask.id, app.executorUserId)
-    const amount = activeTask.budgetAmount ?? 0
+    const amount = taskEscrowAmountInRub(activeTask)
 
     const prevNoStart = noStartViolationCountLast90d(app.executorUserId)
     if (prevNoStart >= 2 && !opts?.bypassNoStartConfirm) {

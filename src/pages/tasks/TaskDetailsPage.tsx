@@ -56,6 +56,7 @@ import type { SubmissionFile } from '@/entities/submission/model/submission'
 import type { Submission } from '@/entities/submission/model/submission'
 import { userIdMatches } from '@/shared/auth/userIdAliases'
 import { Icon } from '@/shared/ui/icon/Icon'
+import { taskEscrowAmountInRub } from '@/shared/lib/usdRubRate'
 
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 const MAX_UPLOAD_VIDEO_MB = 60
@@ -181,6 +182,7 @@ export function TaskDetailsPage() {
   const toast = useToast()
   const user = auth.user!
   const telegramUserId = user.telegramUserId ?? null
+  const userEmail = user.email ?? null
   const toastUi = (msg: string, tone?: 'success' | 'info' | 'error') => toast.showToast({ message: msg, tone })
   const navigate = useNavigate()
   const location = useLocation()
@@ -683,7 +685,7 @@ export function TaskDetailsPage() {
       taskId: task.id,
       clientId: task.createdByUserId,
       executorId: currentUser.id,
-      escrowAmount: task.budgetAmount ?? 0,
+      escrowAmount: taskEscrowAmountInRub(task),
       revisionIncluded: 2,
     })
   }, [currentUser, isExecutorAssigned, myContract, task])
@@ -883,7 +885,7 @@ export function TaskDetailsPage() {
         try {
           await api.post(`/contracts/${contract.id}/approve`, {})
           await Promise.all([refreshContracts(), refreshAssignments(), refreshTasks(), refreshNotifications()])
-          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.workApproved'), tone: 'success' })
+          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.workApproved'), tone: 'success' })
         } catch (e) {
           const msg =
             e instanceof ApiError
@@ -891,7 +893,7 @@ export function TaskDetailsPage() {
               : locale === 'ru'
                 ? 'Не удалось принять работу.'
                 : 'Failed to approve.'
-          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
         }
       })()
       return
@@ -925,7 +927,7 @@ export function TaskDetailsPage() {
     })
 
     recomputeTaskStatus(contract.taskId)
-    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.workApproved'), tone: 'success' })
+    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.workApproved'), tone: 'success' })
   }
 
   const requestReviewRevision = async (contractId: string, message: string) => {
@@ -952,7 +954,7 @@ export function TaskDetailsPage() {
           }
         }
         await Promise.all([refreshContracts(), refreshAssignments(), refreshTasks(), refreshNotifications()])
-        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.revisionRequested'), tone: 'info' })
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.revisionRequested'), tone: 'info' })
       } catch (e) {
         const msg =
           e instanceof ApiError
@@ -960,7 +962,7 @@ export function TaskDetailsPage() {
             : locale === 'ru'
               ? 'Не удалось отправить на доработку.'
               : 'Failed to request a revision.'
-        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
       }
       return
     }
@@ -982,7 +984,7 @@ export function TaskDetailsPage() {
     })
 
     recomputeTaskStatus(contract.taskId)
-    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.revisionRequested'), tone: 'info' })
+    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.revisionRequested'), tone: 'info' })
   }
 
   const handleAssignApplication = async (applicationId: string, opts?: { bypassNoStartConfirm?: boolean }) => {
@@ -1005,12 +1007,13 @@ export function TaskDetailsPage() {
           refreshAssignments(),
           refreshNotifications(),
         ])
-        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.executorAssigned'), tone: 'success' })
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.executorAssigned'), tone: 'success' })
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) {
           void notifyToTelegramAndUi({
             toast: toastUi,
             telegramUserId,
+            email: userEmail,
             text: locale === 'ru' ? 'Сессия истекла. Войдите заново.' : 'Session expired. Please sign in again.',
             tone: 'error',
           })
@@ -1018,7 +1021,7 @@ export function TaskDetailsPage() {
           setInsufficientBalanceOpen(true)
         } else {
           const message = e instanceof ApiError ? `${e.status ?? 'ERR'} ${String(e.message)}` : 'Failed to assign executor'
-          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: message, tone: 'error' })
+          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: message, tone: 'error' })
         }
       }
       return
@@ -1031,7 +1034,7 @@ export function TaskDetailsPage() {
     }
 
     const existingContract = contractRepo.getForTaskExecutor(task.id, app.executorUserId)
-    const amount = task.budgetAmount ?? 0
+    const amount = taskEscrowAmountInRub(task)
     if (!existingContract && amount > 0 && !balanceRepo.withdraw(task.createdByUserId, amount)) {
       setInsufficientBalanceOpen(true)
       return
@@ -1091,7 +1094,7 @@ export function TaskDetailsPage() {
       }
     }
 
-    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.executorAssigned'), tone: 'success' })
+    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.executorAssigned'), tone: 'success' })
   }
 
   const handleRejectApplication = async (applicationId: string) => {
@@ -1100,16 +1103,16 @@ export function TaskDetailsPage() {
       try {
         await rejectApplicationApi(applicationId)
         await Promise.all([fetchApplicationsForTask(task.id).catch(() => []), refreshNotifications()])
-        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.applicationRejected'), tone: 'info' })
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.applicationRejected'), tone: 'info' })
       } catch (e) {
         const message = e instanceof ApiError ? `${e.status ?? 'ERR'} ${String(e.message)}` : 'Failed to reject application'
-        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: message, tone: 'error' })
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: message, tone: 'error' })
       }
       return
     }
 
     applicationRepo.reject(applicationId)
-    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.applicationRejected'), tone: 'info' })
+    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.applicationRejected'), tone: 'info' })
   }
 
   const handleFinalPublish = async () => {
@@ -1119,6 +1122,7 @@ export function TaskDetailsPage() {
       void notifyToTelegramAndUi({
         toast: toastUi,
         telegramUserId,
+        email: userEmail,
         text:
           locale === 'ru'
             ? auth.user?.role === 'pending'
@@ -1140,6 +1144,7 @@ export function TaskDetailsPage() {
           void notifyToTelegramAndUi({
             toast: toastUi,
             telegramUserId,
+            email: userEmail,
             text: locale === 'ru' ? 'Сессия истекла. Войдите снова.' : 'Session expired. Please sign in again.',
             tone: 'error',
           })
@@ -1150,6 +1155,7 @@ export function TaskDetailsPage() {
           void notifyToTelegramAndUi({
             toast: toastUi,
             telegramUserId,
+            email: userEmail,
             text: locale === 'ru' ? 'Недостаточно прав для публикации.' : 'Not allowed to publish.',
             tone: 'error',
           })
@@ -1158,6 +1164,7 @@ export function TaskDetailsPage() {
         void notifyToTelegramAndUi({
           toast: toastUi,
           telegramUserId,
+          email: userEmail,
           text: locale === 'ru' ? 'Не удалось опубликовать задание.' : 'Failed to publish task.',
           tone: 'error',
         })
@@ -1170,7 +1177,7 @@ export function TaskDetailsPage() {
         status: 'open',
       }))
     }
-    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.taskPublished'), tone: 'success' })
+    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.taskPublished'), tone: 'success' })
   }
   const isDraftPublishStep = isPostedByMe && task.status === 'draft'
   const hasBottomActions = isDraftPublishStep || showSingleDeleteCta || canDelete
@@ -1301,7 +1308,7 @@ export function TaskDetailsPage() {
             : locale === 'ru'
               ? 'Не удалось отправить на проверку.'
               : 'Failed to submit for review.'
-        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
         return
       }
     } else {
@@ -1337,7 +1344,7 @@ export function TaskDetailsPage() {
     setCopyrightWaiverAccepted(false)
     setCopyrightWaiverTouched(false)
     setSubmitConfirmOpen(false)
-    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.submitted'), tone: 'success' })
+    void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.submitted'), tone: 'success' })
     setSubmittedModalOpen(true)
   }
 
@@ -1394,6 +1401,7 @@ export function TaskDetailsPage() {
         void notifyToTelegramAndUi({
           toast: toastUi,
           telegramUserId,
+          email: userEmail,
           text:
             locale === 'ru'
               ? 'Этот файл доступен только на устройстве исполнителя (локальная загрузка).'
@@ -1548,6 +1556,7 @@ export function TaskDetailsPage() {
                               void notifyToTelegramAndUi({
                                 toast: toastUi,
                                 telegramUserId,
+                                email: userEmail,
                                 text: t('toast.workStarted'),
                                 tone: 'success',
                               })
@@ -1558,7 +1567,7 @@ export function TaskDetailsPage() {
                                   : locale === 'ru'
                                     ? 'Не удалось начать работу.'
                                     : 'Failed to start work.'
-                              void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                              void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
                             }
                             return
                           }
@@ -1566,6 +1575,7 @@ export function TaskDetailsPage() {
                           void notifyToTelegramAndUi({
                             toast: toastUi,
                             telegramUserId,
+                            email: userEmail,
                             text: t('toast.workStarted'),
                             tone: 'success',
                           })
@@ -1612,6 +1622,7 @@ export function TaskDetailsPage() {
                                 void notifyToTelegramAndUi({
                                   toast: toastUi,
                                   telegramUserId,
+                                  email: userEmail,
                                   text: t('toast.pauseEnded'),
                                   tone: 'success',
                                 })
@@ -1626,7 +1637,7 @@ export function TaskDetailsPage() {
                                       : locale === 'ru'
                                         ? 'Не удалось снять паузу.'
                                         : 'Failed to end pause.'
-                                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
                               }
                             })()
                             return
@@ -1694,6 +1705,7 @@ export function TaskDetailsPage() {
                     void notifyToTelegramAndUi({
                       toast: toastUi,
                       telegramUserId,
+                      email: userEmail,
                       text: locale === 'ru' ? 'Назначение не найдено. Обновите страницу.' : 'Assignment not found. Refresh the page.',
                       tone: 'error',
                     })
@@ -1703,7 +1715,7 @@ export function TaskDetailsPage() {
                     try {
                       await requestPauseApi({ assignmentId: myAssignment.id, reasonId, durationHours, comment })
                       await Promise.all([refreshAssignments(), refreshNotifications(), refreshTasks()])
-                      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseRequested'), tone: 'success' })
+                      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.pauseRequested'), tone: 'success' })
                       setPauseModalOpen(false)
                     } catch (e) {
                       const msg =
@@ -1712,7 +1724,7 @@ export function TaskDetailsPage() {
                           : locale === 'ru'
                             ? 'Не удалось запросить паузу.'
                             : 'Failed to request pause.'
-                      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
                     }
                   })()
                   return
@@ -1731,7 +1743,7 @@ export function TaskDetailsPage() {
                   taskId: id,
                   message: comment || undefined,
                 })
-                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseRequested'), tone: 'success' })
+                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.pauseRequested'), tone: 'success' })
                 setPauseModalOpen(false)
               }}
             />
@@ -2216,6 +2228,7 @@ export function TaskDetailsPage() {
                                         void notifyToTelegramAndUi({
                                           toast: toastUi,
                                           telegramUserId,
+                                          email: userEmail,
                                           text: t('toast.pauseAccepted'),
                                           tone: 'success',
                                         })
@@ -2228,7 +2241,7 @@ export function TaskDetailsPage() {
                                             : locale === 'ru'
                                               ? 'Не удалось принять паузу.'
                                               : 'Failed to accept pause.'
-                                        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                                        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
                                       } finally {
                                         markPauseDecisionBusy(a.id, false)
                                       }
@@ -2241,7 +2254,7 @@ export function TaskDetailsPage() {
                                     actorUserId: user.id,
                                     taskId: task.id,
                                   })
-                                  void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseAccepted'), tone: 'success' })
+                                  void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.pauseAccepted'), tone: 'success' })
                                   markPauseDecisionBusy(a.id, false)
                                 }}
                               >
@@ -2264,6 +2277,7 @@ export function TaskDetailsPage() {
                                         void notifyToTelegramAndUi({
                                           toast: toastUi,
                                           telegramUserId,
+                                          email: userEmail,
                                           text: t('toast.pauseRejected'),
                                           tone: 'info',
                                         })
@@ -2276,7 +2290,7 @@ export function TaskDetailsPage() {
                                             : locale === 'ru'
                                               ? 'Не удалось отклонить паузу.'
                                               : 'Failed to reject pause.'
-                                        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                                        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
                                       } finally {
                                         markPauseDecisionBusy(a.id, false)
                                       }
@@ -2289,7 +2303,7 @@ export function TaskDetailsPage() {
                                     actorUserId: user.id,
                                     taskId: task.id,
                                   })
-                                  void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseRejected'), tone: 'info' })
+                                  void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.pauseRejected'), tone: 'info' })
                                   markPauseDecisionBusy(a.id, false)
                                 }}
                               >
@@ -2318,6 +2332,7 @@ export function TaskDetailsPage() {
                                         void notifyToTelegramAndUi({
                                           toast: toastUi,
                                           telegramUserId,
+                                          email: userEmail,
                                           text: locale === 'ru' ? 'Исполнитель снят с задания.' : 'Executor removed from the task.',
                                           tone: 'success',
                                         })
@@ -2328,7 +2343,7 @@ export function TaskDetailsPage() {
                                             : locale === 'ru'
                                               ? 'Не удалось сменить исполнителя.'
                                               : 'Failed to switch executor.'
-                                        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                                        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
                                       }
                                     })()
                                     return
@@ -2433,12 +2448,13 @@ export function TaskDetailsPage() {
                         })
                       }
                       setApplicationMessage('')
-                      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.applied'), tone: 'success' })
+                      void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.applied'), tone: 'success' })
                     } catch (e) {
                       if (e instanceof ApiError && e.status === 401) {
                         void notifyToTelegramAndUi({
                           toast: toastUi,
                           telegramUserId,
+                          email: userEmail,
                           text: locale === 'ru' ? 'Сессия истекла. Войдите снова.' : 'Session expired. Please sign in again.',
                           tone: 'error',
                         })
@@ -2450,6 +2466,7 @@ export function TaskDetailsPage() {
                           void notifyToTelegramAndUi({
                             toast: toastUi,
                             telegramUserId,
+                            email: userEmail,
                             text:
                               locale === 'ru'
                                 ? 'Ваш аккаунт заблокирован. Отклики недоступны.'
@@ -2471,6 +2488,7 @@ export function TaskDetailsPage() {
                           void notifyToTelegramAndUi({
                             toast: toastUi,
                             telegramUserId,
+                            email: userEmail,
                             text:
                               locale === 'ru'
                                 ? `Отклики заблокированы до ${untilLabel}. Осталось: ${formatTimeLeft(left, locale)}`
@@ -2481,6 +2499,7 @@ export function TaskDetailsPage() {
                           void notifyToTelegramAndUi({
                             toast: toastUi,
                             telegramUserId,
+                            email: userEmail,
                             text: locale === 'ru' ? 'Отклик запрещён сервером.' : 'Applying is forbidden by server.',
                             tone: 'error',
                           })
@@ -2489,6 +2508,7 @@ export function TaskDetailsPage() {
                         void notifyToTelegramAndUi({
                           toast: toastUi,
                           telegramUserId,
+                          email: userEmail,
                           text: locale === 'ru' ? 'Не удалось отправить отклик.' : 'Failed to apply.',
                           tone: 'error',
                         })
@@ -2778,7 +2798,7 @@ export function TaskDetailsPage() {
                                               : locale === 'ru'
                                                 ? 'Не удалось открыть спор.'
                                                 : 'Failed to open dispute.'
-                                          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                                          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
                                         }
                                       })()
                                       return
@@ -2893,6 +2913,7 @@ export function TaskDetailsPage() {
                                               void notifyToTelegramAndUi({
                                                 toast: toastUi,
                                                 telegramUserId,
+                                                email: userEmail,
                                                 text:
                                                   locale === 'ru'
                                                     ? 'Этот файл доступен только на устройстве исполнителя (локальная загрузка). Для продакшена нужен серверный upload.'
@@ -3217,6 +3238,7 @@ export function TaskDetailsPage() {
                 void notifyToTelegramAndUi({
                   toast: toastUi,
                   telegramUserId,
+                  email: userEmail,
                   text: locale === 'ru' ? 'Оценка отправлена.' : 'Rating submitted.',
                   tone: 'success',
                 })
@@ -3227,7 +3249,7 @@ export function TaskDetailsPage() {
                     : locale === 'ru'
                       ? 'Не удалось отправить оценку.'
                       : 'Failed to submit rating.'
-                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
                 return
               } finally {
                 setRateCustomerOpen(false)
@@ -3374,7 +3396,7 @@ export function TaskDetailsPage() {
                             : locale === 'ru'
                               ? 'Не удалось открыть спор.'
                               : 'Failed to open dispute.'
-                        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
                       }
                     })()
                     return

@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { paths } from '@/app/router/paths'
 import { useAuth } from '@/shared/auth/AuthContext'
 import { useI18n } from '@/shared/i18n/I18nContext'
@@ -83,16 +83,10 @@ export function EditProfilePage() {
   const [email, setEmail] = useState(user?.email ?? '')
   const [company, setCompany] = useState(user?.company ?? '')
   const [socials, setSocials] = useState<Partial<Record<SocialPlatform, string>>>(() => user?.socials ?? {})
-  const [socialVideos, setSocialVideos] = useState<Partial<Record<SocialPlatform, File | null>>>(() => ({}))
   const [isSocialsOpen, setIsSocialsOpen] = useState(false)
-  const [socialsDraft, setSocialsDraft] = useState<Partial<Record<SocialPlatform, string>>>(() => user?.socials ?? {})
-  const [socialVideosDraft, setSocialVideosDraft] = useState<Partial<Record<SocialPlatform, File | null>>>(() => ({}))
-  const [socialVideoErrors, setSocialVideoErrors] = useState<Partial<Record<SocialPlatform, string>>>(() => ({}))
-  const [socialsModalError, setSocialsModalError] = useState<string | null>(null)
   const [socialsHelpOpen, setSocialsHelpOpen] = useState(false)
-  const [socialsModerationPending, setSocialsModerationPending] = useState(false)
-  const [socialsModerationSubmittedAt, setSocialsModerationSubmittedAt] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [touched, setTouched] = useState<{ fullName?: boolean; phoneNational?: boolean; email?: boolean }>({})
   const [submitted, setSubmitted] = useState(false)
@@ -125,39 +119,23 @@ export function EditProfilePage() {
 
   const isValid = Object.keys(fieldErrors).length === 0
 
+  // Sync socials from server (e.g. after OAuth connect redirect)
   useEffect(() => {
-    const myId = String(user?.id ?? '').trim()
-    if (!myId) return
-    try {
-      const raw = localStorage.getItem('ui-create-works.socialsModeration.v1')
-      const parsed = raw ? (JSON.parse(raw) as any) : null
-      const rec = parsed && typeof parsed === 'object' ? parsed[myId] : null
-      const pending = Boolean(rec && rec.status === 'pending')
-      setSocialsModerationPending(pending)
-      setSocialsModerationSubmittedAt(typeof rec?.submittedAt === 'string' ? rec.submittedAt : null)
-    } catch {
-      setSocialsModerationPending(false)
-      setSocialsModerationSubmittedAt(null)
-    }
-  }, [user?.id])
+    if (user?.socials) setSocials(user.socials)
+  }, [user?.socials])
 
-  function markSocialsModerationPending() {
-    const myId = String(user?.id ?? '').trim()
-    if (!myId) return
-    const submittedAt = new Date().toISOString()
-    setSocialsModerationPending(true)
-    setSocialsModerationSubmittedAt(submittedAt)
-    try {
-      const key = 'ui-create-works.socialsModeration.v1'
-      const raw = localStorage.getItem(key)
-      const parsed = raw ? (JSON.parse(raw) as any) : {}
-      const next = parsed && typeof parsed === 'object' ? parsed : {}
-      next[myId] = { status: 'pending', submittedAt }
-      localStorage.setItem(key, JSON.stringify(next))
-    } catch {
-      // ignore
-    }
-  }
+  // Toast when returning from platform OAuth with ?connected=platform
+  useEffect(() => {
+    const connected = searchParams.get('connected')
+    if (!connected) return
+    const platform = socialPlatforms.find((p) => p.key === connected)
+    const label = platform?.label ?? connected
+    showToast({ tone: 'success', message: t('profile.socialsConnectedToast', { platform: label }) })
+    setSearchParams((prev) => {
+      prev.delete('connected')
+      return prev
+    })
+  }, [searchParams, setSearchParams, showToast, t])
 
   useEffect(() => {
     if (!isSocialsOpen) return
@@ -179,36 +157,12 @@ export function EditProfilePage() {
     )
   }
 
-  const socialsHelpVideoUrl: string | null = null
-
-  const missingRequiredSocialVideosCount = useMemo(() => {
-    let missing = 0
-    for (const p of socialPlatforms) {
-      const hasValue = Boolean((socialsDraft[p.key] ?? '').trim())
-      if (!hasValue) continue
-      const attached = socialVideosDraft[p.key] ?? null
-      if (!attached) missing += 1
-    }
-    return missing
-  }, [socialsDraft, socialVideosDraft])
-
-  const completeSocialPairsCount = useMemo(() => {
-    let complete = 0
-    for (const p of socialPlatforms) {
-      const hasValue = Boolean((socialsDraft[p.key] ?? '').trim())
-      if (!hasValue) continue
-      const attached = socialVideosDraft[p.key] ?? null
-      if (attached) complete += 1
-    }
-    return complete
-  }, [socialsDraft, socialVideosDraft])
-
-  const canSubmitSocialsForModeration = completeSocialPairsCount > 0 && missingRequiredSocialVideosCount === 0
-
-  useEffect(() => {
-    if (!socialsModalError) return
-    if (canSubmitSocialsForModeration) setSocialsModalError(null)
-  }, [canSubmitSocialsForModeration, socialsModalError])
+  const apiBase = (import.meta.env.VITE_API_BASE ?? '/api').replace(/\/$/, '')
+  const connectBase =
+    typeof window !== 'undefined' && !apiBase.startsWith('http')
+      ? `${window.location.origin}${apiBase.startsWith('/') ? '' : '/'}${apiBase}`
+      : apiBase
+  const getConnectUrl = (platform: SocialPlatform) => `${connectBase}/auth/connect/${platform}`
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -320,34 +274,13 @@ export function EditProfilePage() {
                 ariaLabel={t('profile.socialsHelp.aria')}
                 title={t('profile.socialsHelp.title')}
                 content={t('profile.socialsHelp.text')}
-                footer={
-                  <button
-                    type="button"
-                    className="helpTipModal__actionBtn"
-                    disabled={!socialsHelpVideoUrl}
-                    title={!socialsHelpVideoUrl ? t('profile.socialsHelp.videoMissingHint') : undefined}
-                    onClick={() => {
-                      if (!socialsHelpVideoUrl) return
-                      window.open(socialsHelpVideoUrl, '_blank', 'noopener,noreferrer')
-                    }}
-                  >
-                    {t('profile.socialsHelp.watchVideo')}
-                  </button>
-                }
               />
             </div>
-            <div className="editProfileSocialsHint">{t('profile.socialsHint')}</div>
           </div>
 
           <button
             type="button"
-            onClick={() => {
-              setSocialsDraft(socials)
-              setSocialVideosDraft(socialVideos)
-              setSocialVideoErrors({})
-              setSocialsModalError(null)
-              setIsSocialsOpen(true)
-            }}
+            onClick={() => setIsSocialsOpen(true)}
             className="editProfileSocialsBtn"
           >
             {t('profile.socialsButton')}
@@ -388,180 +321,71 @@ export function EditProfilePage() {
                   ariaLabel={t('profile.socialsHelp.aria')}
                   title={t('profile.socialsHelp.title')}
                   content={t('profile.socialsHelp.text')}
-                  footer={
-                    <button
-                      type="button"
-                      className="helpTipModal__actionBtn"
-                      disabled={!socialsHelpVideoUrl}
-                      title={!socialsHelpVideoUrl ? t('profile.socialsHelp.videoMissingHint') : undefined}
-                      onClick={() => {
-                        if (!socialsHelpVideoUrl) return
-                        window.open(socialsHelpVideoUrl, '_blank', 'noopener,noreferrer')
-                      }}
-                    >
-                      {t('profile.socialsHelp.watchVideo')}
-                    </button>
-                  }
                 />
               </div>
             </div>
-            {socialsModerationPending ? (
-              <div className="editProfileModerationBanner" role="status">
-                <div style={{ fontWeight: 750 }}>
-                  {t('profile.socialsModerationPendingTitle')}
-                </div>
-                <div style={{ opacity: 0.9, marginTop: 4 }}>
-                  {t('profile.socialsModerationPendingText')}
-                  {socialsModerationSubmittedAt ? (
-                    <span style={{ opacity: 0.8 }}>
-                      {' '}
-                      {locale === 'ru'
-                        ? `(${new Date(socialsModerationSubmittedAt).toLocaleString('ru-RU')})`
-                        : `(${new Date(socialsModerationSubmittedAt).toLocaleString('en-US')})`}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-            {socialsModalError ? (
-              <div className="editProfileError" style={{ marginTop: 10 }}>
-                {socialsModalError}
-              </div>
-            ) : null}
 
-            <div
-              className="editProfileSocialsGrid"
-            >
-              {socialPlatforms.map((p) => (
-                <label key={p.key} className="editProfileField">
-                  <span className="editProfileLabel">{p.label}</span>
-                  {(() => {
-                    const hasValue = Boolean((socialsDraft[p.key] ?? '').trim())
-                    const fileInputId = `social-video-${p.key}`
-                    const attached = socialVideosDraft[p.key] ?? null
-                    const errorText = socialVideoErrors[p.key] ?? null
-
-                    return (
-                      <>
-                        <div className="editProfileInputWithAction">
-                          <input
-                            value={socialsDraft[p.key] ?? ''}
-                            disabled={socialsModerationPending}
-                            onChange={(e) => {
-                              const value = e.target.value
-                              setSocialsDraft((prev) => ({ ...prev, [p.key]: value }))
-                              const nowHasValue = Boolean(value.trim())
-                              if (!nowHasValue) {
-                                setSocialVideosDraft((prev) => ({ ...prev, [p.key]: null }))
-                                setSocialVideoErrors((prev) => {
-                                  const next = { ...prev }
-                                  delete next[p.key]
-                                  return next
-                                })
-                              }
-                            }}
-                            placeholder={p.key === 'telegram' ? '@username or https://t.me/username' : '@username or URL'}
-                            className="editProfileInput"
-                          />
-                          <input
-                            id={fileInputId}
-                            type="file"
-                            accept="video/*"
-                            className="editProfileHiddenFileInput"
-                            disabled={socialsModerationPending}
-                            onChange={(e) => {
-                              const file = e.target.files?.[0] ?? null
-                              setSocialVideosDraft((prev) => ({ ...prev, [p.key]: file }))
-                              if (file) {
-                                setSocialVideoErrors((prev) => {
-                                  const next = { ...prev }
-                                  delete next[p.key]
-                                  return next
-                                })
-                              }
-                              setSocialsModalError(null)
-                            }}
-                          />
-                          {hasValue ? (
-                            <button
-                              type="button"
-                              className="editProfileInputActionBtn"
-                              disabled={socialsModerationPending}
-                              onClick={() => {
-                                const el = document.getElementById(fileInputId) as HTMLInputElement | null
-                                el?.click()
-                              }}
-                            >
-                              {t('profile.socialsAttachVideo')}
-                            </button>
-                          ) : null}
-                        </div>
-                        {errorText ? <div className="editProfileError">{errorText}</div> : null}
-                        {attached ? (
-                          <div className="editProfileAttachedVideoHint">
-                            {t('profile.socialsAttachedVideo')}: {attached.name}
-                          </div>
-                        ) : null}
-                      </>
-                    )
-                  })()}
-                </label>
-              ))}
+            <div className="editProfileSocialsGrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12, marginTop: 16 }}>
+              {socialPlatforms.map((p) => {
+                const connected = Boolean((user?.socials?.[p.key] ?? socials[p.key] ?? '').trim())
+                return (
+                  <div
+                    key={p.key}
+                    className="editProfileField"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      padding: 12,
+                      border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: 12,
+                      gap: 8,
+                    }}
+                  >
+                    <img
+                      src={`https://cdn.simpleicons.org/${p.simpleIconsSlug}/ffffff`}
+                      alt=""
+                      width={32}
+                      height={32}
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      style={{ opacity: connected ? 1 : 0.6 }}
+                    />
+                    <span className="editProfileLabel" style={{ fontSize: 14 }}>{p.label}</span>
+                    {connected ? (
+                      <span style={{ fontSize: 12, opacity: 0.9, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-success, #22c55e)' }} />
+                        {t('profile.socialsConnected')}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="editProfileBtn editProfileBtn--primary"
+                        style={{ fontSize: 13, padding: '6px 12px' }}
+                        title={t('profile.socialsConnectHint')}
+                        onClick={() => {
+                          window.location.href = getConnectUrl(p.key)
+                        }}
+                      >
+                        {t('profile.socialsConnect')}
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
             </div>
 
-            <div className="editProfileModalActions">
-              {!socialsModerationPending ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSocialsModalError(null)
-                    const missingKeys: SocialPlatform[] = []
-                    for (const p of socialPlatforms) {
-                      const hasValue = Boolean((socialsDraft[p.key] ?? '').trim())
-                      if (!hasValue) continue
-                      const attached = socialVideosDraft[p.key] ?? null
-                      if (!attached) missingKeys.push(p.key)
-                    }
-                    if (missingKeys.length > 0) {
-                      const next = Object.fromEntries(
-                        missingKeys.map((k) => [k, t('profile.socialsVideoRequired')]),
-                      ) as Partial<Record<SocialPlatform, string>>
-                      setSocialVideoErrors(next)
-                      return
-                    }
-                    if (completeSocialPairsCount === 0) {
-                      setSocialsModalError(t('profile.socialsModerationNothingError'))
-                      return
-                    }
-                    setSocials(socialsDraft)
-                    setSocialVideos(socialVideosDraft)
-                    markSocialsModerationPending()
-                    showToast({
-                      tone: 'success',
-                      message: locale === 'ru' ? 'Социальные сети отправлены на модерацию.' : 'Social links were submitted for moderation.',
-                    })
-                    setIsSocialsOpen(false)
-                  }}
-                  className={`editProfileBtn editProfileBtn--primary${canSubmitSocialsForModeration ? '' : ' editProfileBtn--inactive'}`}
-                  aria-disabled={!canSubmitSocialsForModeration}
-                  title={
-                    !canSubmitSocialsForModeration
-                      ? missingRequiredSocialVideosCount > 0
-                        ? t('profile.socialsVideoRequired')
-                        : t('profile.socialsSubmitRequiresPair')
-                      : undefined
-                  }
-                >
-                  {t('profile.socialsSubmitForModeration')}
-                </button>
-              ) : null}
+            <div className="editProfileModalActions" style={{ marginTop: 24 }}>
               <button
                 type="button"
-                onClick={() => {
-                  setSocialVideoErrors({})
-                  setSocialsModalError(null)
-                  setIsSocialsOpen(false)
-                }}
+                onClick={() => setIsSocialsOpen(false)}
+                className="editProfileBtn editProfileBtn--primary"
+              >
+                {t('profile.socialsSave')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsSocialsOpen(false)}
                 className="editProfileBtn"
               >
                 {t('common.cancel')}

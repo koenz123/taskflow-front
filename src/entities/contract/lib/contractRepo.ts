@@ -57,6 +57,8 @@ function normalize(raw: unknown): Contract | null {
     typeof r.escrowAmount === 'number' && Number.isFinite(r.escrowAmount) && r.escrowAmount >= 0
       ? r.escrowAmount
       : 0
+  const escrowCurrency =
+    r.escrowCurrency === 'USD' || r.escrowCurrency === 'RUB' ? r.escrowCurrency : 'RUB'
 
   const c: Contract = {
     id,
@@ -64,6 +66,7 @@ function normalize(raw: unknown): Contract | null {
     clientId,
     executorId,
     escrowAmount,
+    escrowCurrency,
     status: normalizeStatus(r.status),
     createdAt,
     updatedAt,
@@ -142,6 +145,7 @@ export const contractRepo = {
         typeof input.escrowAmount === 'number' && Number.isFinite(input.escrowAmount) && input.escrowAmount >= 0
           ? input.escrowAmount
           : 0,
+      escrowCurrency: 'RUB',
       status: 'active',
       revisionIncluded:
         typeof input.revisionIncluded === 'number' && Number.isFinite(input.revisionIncluded)

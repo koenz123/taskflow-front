@@ -28,6 +28,7 @@ import { refreshAssignments } from '@/entities/taskAssignment/lib/useTaskAssignm
 import { refreshTasks } from '@/entities/task/lib/useTasks'
 import { serverBalanceRepo } from '@/entities/user/lib/serverBalanceRepo'
 import { userIdMatches } from '@/shared/auth/userIdAliases'
+import { contractEscrowAmountInRub } from '@/shared/lib/usdRubRate'
 
 const DEV_ARBITER_USER_ID = 'user_dev_arbiter'
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
@@ -325,7 +326,7 @@ export function DisputeWorkspacePage() {
   const taskTitle = task ? pickText(task.title, locale) : contract.taskId
   const dueMs = dispute.slaDueAt ? Date.parse(dispute.slaDueAt) : NaN
   const leftMs = Number.isFinite(dueMs) ? dueMs - nowMs : NaN
-  const escrowAmount = contract.escrowAmount ?? 0
+  const escrowAmount = contractEscrowAmountInRub(contract)
   const escrowFrozen = balanceFreezeRepo
     .listForTask(contract.taskId)
     .find((e) => e.executorId === contract.executorId)?.amount ?? 0

@@ -4,6 +4,7 @@ import { paths, taskDetailsPath, userProfilePath } from '@/app/router/paths'
 import { useAuth } from '@/shared/auth/AuthContext'
 import { useI18n } from '@/shared/i18n/I18nContext'
 import { refreshTasks, useTasks } from '@/entities/task/lib/useTasks'
+import { pickText } from '@/entities/task/lib/taskText'
 import { useUsers } from '@/entities/user/lib/useUsers'
 import { refreshAssignments, useTaskAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
 import { taskAssignmentRepo } from '@/entities/taskAssignment/lib/taskAssignmentRepo'
@@ -25,6 +26,7 @@ export function CustomerRequestsPage() {
   const toast = useToast()
   const user = auth.user!
   const telegramUserId = user.telegramUserId ?? null
+  const userEmail = user.email ?? null
   const toastUi = (msg: string, tone?: 'success' | 'info' | 'error') => toast.showToast({ message: msg, tone })
   const tasks = useTasks()
   const users = useUsers()
@@ -134,7 +136,7 @@ export function CustomerRequestsPage() {
                       <div className="customerTasksItemHeader">
                         {task ? (
                           <Link className="customerTasksItemTitle" to={taskDetailsPath(task.id)}>
-                            {task.title ? (locale === 'ru' ? task.title.ru : task.title.en) : t('task.details.notFound')}
+                            {pickText(task.title, locale) || t('task.details.notFound')}
                           </Link>
                         ) : (
                           <span className="customerTasksItemTitle" style={{ opacity: 0.85 }}>
@@ -190,7 +192,7 @@ export function CustomerRequestsPage() {
                               try {
                                 await acceptPauseApi(req.id)
                                 await Promise.all([refreshAssignments(), refreshNotifications(), refreshTasks()])
-                                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseAccepted'), tone: 'success' })
+                                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.pauseAccepted'), tone: 'success' })
                               } catch (e) {
                                 markDone(req.id, false)
                                 const msg =
@@ -199,7 +201,7 @@ export function CustomerRequestsPage() {
                                     : locale === 'ru'
                                       ? 'Не удалось принять паузу.'
                                       : 'Failed to accept pause.'
-                                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
                               } finally {
                                 markBusy(req.id, false)
                               }
@@ -213,7 +215,7 @@ export function CustomerRequestsPage() {
                             actorUserId: user.id,
                             taskId: req.taskId,
                           })
-                          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseAccepted'), tone: 'success' })
+                          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.pauseAccepted'), tone: 'success' })
                           markBusy(req.id, false)
                         }}
                       >
@@ -234,7 +236,7 @@ export function CustomerRequestsPage() {
                               try {
                                 await rejectPauseApi(req.id)
                                 await Promise.all([refreshAssignments(), refreshNotifications(), refreshTasks()])
-                                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseRejected'), tone: 'info' })
+                                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.pauseRejected'), tone: 'info' })
                               } catch (e) {
                                 markDone(req.id, false)
                                 const msg =
@@ -243,7 +245,7 @@ export function CustomerRequestsPage() {
                                     : locale === 'ru'
                                       ? 'Не удалось отклонить паузу.'
                                       : 'Failed to reject pause.'
-                                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: msg, tone: 'error' })
+                                void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
                               } finally {
                                 markBusy(req.id, false)
                               }
@@ -257,7 +259,7 @@ export function CustomerRequestsPage() {
                             actorUserId: user.id,
                             taskId: req.taskId,
                           })
-                          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, text: t('toast.pauseRejected'), tone: 'info' })
+                          void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.pauseRejected'), tone: 'info' })
                           markBusy(req.id, false)
                         }}
                       >

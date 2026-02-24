@@ -45,7 +45,7 @@ function normalizeStatus(value: unknown): TaskStatus {
   return 'open'
 }
 
-function normalizeTask(raw: unknown): Task | null {
+export function normalizeTask(raw: unknown): Task | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as Record<string, unknown>
 

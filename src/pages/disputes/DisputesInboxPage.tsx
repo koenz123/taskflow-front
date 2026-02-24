@@ -10,6 +10,7 @@ import { useUsers } from '@/entities/user/lib/useUsers'
 import { pickText } from '@/entities/task/lib/taskText'
 import { useAllDisputeMessages } from '@/entities/disputeMessage/lib/useAllDisputeMessages'
 import { CustomSelect } from '@/shared/ui/custom-select/CustomSelect'
+import { contractEscrowAmountInRub } from '@/shared/lib/usdRubRate'
 import './disputes-inbox.css'
 
 type StatusFilter = 'all' | 'open' | 'in_review'
@@ -157,7 +158,7 @@ export function DisputesInboxPage() {
       }
 
       const c = contractById.get(d.contractId) ?? null
-      const amount = c?.escrowAmount ?? 0
+      const amount = c ? contractEscrowAmountInRub(c) : 0
       if (Number.isFinite(min) && amount < min) return false
       if (Number.isFinite(max) && amount > max) return false
 
@@ -177,8 +178,8 @@ export function DisputesInboxPage() {
 
     const sorted = filtered.slice().sort((a, b) => {
       if (sort === 'highest_amount') {
-        const ac = contractById.get(a.contractId)?.escrowAmount ?? 0
-        const bc = contractById.get(b.contractId)?.escrowAmount ?? 0
+        const ac = contractById.get(a.contractId) ? contractEscrowAmountInRub(contractById.get(a.contractId)!) : 0
+        const bc = contractById.get(b.contractId) ? contractEscrowAmountInRub(contractById.get(b.contractId)!) : 0
         if (bc !== ac) return bc - ac
       }
       // default oldest
@@ -312,7 +313,7 @@ export function DisputesInboxPage() {
               const t = c ? (taskById.get(c.taskId) ?? null) : null
               const customer = c ? (userById.get(c.clientId) ?? null) : null
               const executor = c ? (userById.get(c.executorId) ?? null) : null
-              const amount = c?.escrowAmount ?? 0
+              const amount = c ? contractEscrowAmountInRub(c) : 0
               const opened = new Date(d.createdAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')
               const dueMs = d.slaDueAt ? Date.parse(d.slaDueAt) : NaN
               const leftMs = Number.isFinite(dueMs) ? dueMs - nowMs : NaN

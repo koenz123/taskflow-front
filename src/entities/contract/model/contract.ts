@@ -13,6 +13,8 @@ export type Contract = {
   clientId: string
   executorId: string
   escrowAmount: number
+  /** Currency of escrow (from API or default RUB). When RUB, escrowAmount is already in rubles. */
+  escrowCurrency?: 'RUB' | 'USD'
   status: ContractStatus
 
   revisionIncluded?: number

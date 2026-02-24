@@ -299,7 +299,7 @@ function subscribeApi(cb: () => void) {
     apiPollId = window.setInterval(() => {
       if (document.visibilityState !== 'visible') return
       void refreshNotifications()
-    }, 30_000)
+    }, 3_000)
   }
   window.addEventListener('ui-create-works.session.change', onSession)
   window.addEventListener('storage', onSession)

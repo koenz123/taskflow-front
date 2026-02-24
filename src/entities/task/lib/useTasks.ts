@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import type { Task } from '../model/task'
-import { taskRepo } from './taskRepo'
+import { normalizeTask, taskRepo } from './taskRepo'
 import { api } from '@/shared/api/api'
 import { sessionRepo } from '@/shared/auth/sessionRepo'
 
@@ -14,6 +14,9 @@ let apiStore: { subs: Set<() => void> } = { subs: new Set() }
 let apiRefreshing = false
 let apiHasLoaded = false
 let apiLoadedForToken: string | null = null
+let apiPollId: ReturnType<typeof setInterval> | null = null
+
+const POLL_MS = 3_000 // обновление списка заданий без перезагрузки страницы
 
 const LOCAL_META = { loaded: true, refreshing: false }
 let apiMetaSnapshot = { loaded: false, refreshing: false }
@@ -38,7 +41,17 @@ export async function fetchTasks() {
     return
   }
   try {
-    apiSnapshot = await api.get<Task[]>('/tasks')
+    const raw = await api.get<unknown>('/tasks')
+    const list = Array.isArray(raw) ? raw : []
+    apiSnapshot = list
+      .map((item) => {
+        // Safety: do not fabricate ids for API tasks — drop malformed items.
+        if (!item || typeof item !== 'object') return null
+        const id = (item as any).id
+        if (typeof id !== 'string' || !id.trim()) return null
+        return normalizeTask(item)
+      })
+      .filter(Boolean) as Task[]
     apiHasLoaded = true
   } catch {
     // keep previous snapshot on transient errors
@@ -64,12 +77,27 @@ function subscribe(callback: () => void) {
     const onSession = () => {
       void refreshTasks()
     }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refreshTasks()
+    }
+    if (apiPollId === null && typeof window !== 'undefined') {
+      apiPollId = window.setInterval(() => {
+        if (document.visibilityState !== 'visible') return
+        void refreshTasks()
+      }, POLL_MS)
+    }
     window.addEventListener('ui-create-works.session.change', onSession)
     window.addEventListener('storage', onSession)
+    document.addEventListener('visibilitychange', onVisible)
     return () => {
       apiStore.subs.delete(callback)
+      if (apiStore.subs.size === 0 && apiPollId !== null) {
+        clearInterval(apiPollId)
+        apiPollId = null
+      }
       window.removeEventListener('ui-create-works.session.change', onSession)
       window.removeEventListener('storage', onSession)
+      document.removeEventListener('visibilitychange', onVisible)
     }
   }
 

@@ -156,14 +156,14 @@ export function TasksPage() {
     const matchesText = (task: (typeof allTasks)[number]) => {
       if (tokens.length === 0) return true
       const hay = [
-        task.title.en,
-        task.title.ru,
-        task.shortDescription.en,
-        task.shortDescription.ru,
+        task.title?.en ?? '',
+        task.title?.ru ?? '',
+        task.shortDescription?.en ?? '',
+        task.shortDescription?.ru ?? '',
         task.requirements?.en ?? '',
         task.requirements?.ru ?? '',
-        task.description.en,
-        task.description.ru,
+        task.description?.en ?? '',
+        task.description?.ru ?? '',
         task.category ?? '',
         task.location ?? '',
       ]
@@ -287,14 +287,14 @@ export function TasksPage() {
       .filter((task) => {
         if (tokens.length && !tokens.every((tok) => {
           const hay = [
-            task.title.en,
-            task.title.ru,
-            task.shortDescription.en,
-            task.shortDescription.ru,
+            task.title?.en ?? '',
+            task.title?.ru ?? '',
+            task.shortDescription?.en ?? '',
+            task.shortDescription?.ru ?? '',
             task.requirements?.en ?? '',
             task.requirements?.ru ?? '',
-            task.description.en,
-            task.description.ru,
+            task.description?.en ?? '',
+            task.description?.ru ?? '',
             task.category ?? '',
             task.location ?? '',
           ]

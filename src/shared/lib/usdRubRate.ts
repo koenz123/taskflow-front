@@ -36,6 +36,35 @@ export function getUsdRubRateCachedOrFallback() {
   return readUsdRubRateCache()?.rate ?? USD_RUB_FALLBACK_RATE
 }
 
+/**
+ * Sum in RUB to use for balance/freeze/payout.
+ * Balance is stored in RUB: if task is in RUB use amount as-is; if in USD convert to RUB.
+ */
+export function taskEscrowAmountInRub(
+  task: { budgetAmount?: number; budgetCurrency?: string },
+  rate?: number
+): number {
+  const amount = Number(task.budgetAmount)
+  if (!Number.isFinite(amount) || amount <= 0) return 0
+  const r = typeof rate === 'number' && Number.isFinite(rate) && rate > 0 ? rate : getUsdRubRateCachedOrFallback()
+  return task.budgetCurrency === 'RUB' ? amount : Math.round(amount * r * 100) / 100
+}
+
+/**
+ * Contract escrow amount in RUB. Backend now returns escrowCurrency: 'RUB' — then use escrowAmount as-is.
+ * If escrowCurrency is USD (legacy), convert to RUB.
+ */
+export function contractEscrowAmountInRub(
+  contract: { escrowAmount?: number; escrowCurrency?: string },
+  rate?: number
+): number {
+  const amount = Number(contract.escrowAmount)
+  if (!Number.isFinite(amount) || amount < 0) return 0
+  if (contract.escrowCurrency === 'RUB') return amount
+  const r = typeof rate === 'number' && Number.isFinite(rate) && rate > 0 ? rate : getUsdRubRateCachedOrFallback()
+  return contract.escrowCurrency === 'USD' ? Math.round(amount * r * 100) / 100 : amount
+}
+
 async function fetchUsdRubRateFromPublicApi() {
   // No API key required.
   // Response example: { rates: { RUB: 90.12, ... }, ... }

@@ -139,14 +139,18 @@ function subscribeApi(cb: () => void) {
   const onSession = () => {
     void refreshRatings()
   }
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') void refreshRatings()
+  }
   if (apiPollId === null && typeof window !== 'undefined') {
     apiPollId = window.setInterval(() => {
       if (document.visibilityState !== 'visible') return
       void refreshRatings()
-    }, 30_000)
+    }, 3_000)
   }
   window.addEventListener('ui-create-works.session.change', onSession)
   window.addEventListener('storage', onSession)
+  document.addEventListener('visibilitychange', onVisible)
   return () => {
     apiStore.subs.delete(cb)
     if (apiStore.subs.size === 0 && apiPollId !== null) {
@@ -155,6 +159,7 @@ function subscribeApi(cb: () => void) {
     }
     window.removeEventListener('ui-create-works.session.change', onSession)
     window.removeEventListener('storage', onSession)
+    document.removeEventListener('visibilitychange', onVisible)
   }
 }
 
