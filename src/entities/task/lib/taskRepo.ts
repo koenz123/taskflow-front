@@ -1,4 +1,4 @@
-import type { LocalizedText, Task, TaskStatus } from '../model/task'
+import type { LocalizedText, Task, TaskReferenceItem, TaskReferenceVideo, TaskStatus } from '../model/task'
 import type { TaskApplication } from '../model/application'
 import { createId } from '@/shared/lib/id'
 import { applicationRepo } from './applicationRepo'
@@ -153,16 +153,44 @@ export function normalizeTask(raw: unknown): Task | null {
         .map((item) => {
           if (!item || typeof item !== 'object') return null
           const rrr = item as Record<string, unknown>
-          const blobId = typeof rrr.blobId === 'string' ? rrr.blobId.trim() : ''
+          const blobId = typeof rrr.blobId === 'string' ? rrr.blobId.trim() : undefined
+          const url = typeof rrr.url === 'string' ? rrr.url.trim() : undefined
           const name = typeof rrr.name === 'string' ? rrr.name.trim() : ''
           const mimeType = typeof rrr.mimeType === 'string' && rrr.mimeType.trim() ? rrr.mimeType.trim() : undefined
-          if (!blobId || !name) return null
-          return { blobId, name, mimeType }
+          if ((!blobId && !url) || !name) return null
+          return { ...(blobId ? { blobId } : {}), ...(url ? { url } : {}), name, mimeType }
         })
-        .filter(Boolean) as Array<{ blobId: string; name: string; mimeType?: string }>
+        .filter(Boolean) as TaskReferenceVideo[]
       if (!normalized.length) return undefined
-      // Safety: cap stored references to 3 videos.
       return { kind: 'videos' as const, videos: normalized.slice(0, 3) }
+    }
+    if (kind === 'items') {
+      const rawItems = (rr as any).items as unknown
+      if (!Array.isArray(rawItems)) return undefined
+      const normalized = rawItems
+        .slice(0, 3)
+        .map((item) => {
+          if (!item || typeof item !== 'object') return null
+          const rrr = item as Record<string, unknown>
+          const itemKind = rrr.kind
+          if (itemKind === 'url') {
+            const url = typeof rrr.url === 'string' ? rrr.url.trim() : ''
+            if (!url) return null
+            return { kind: 'url' as const, url }
+          }
+          if (itemKind === 'video') {
+            const blobId = typeof rrr.blobId === 'string' ? rrr.blobId.trim() : undefined
+            const url = typeof rrr.url === 'string' ? rrr.url.trim() : undefined
+            const name = typeof rrr.name === 'string' ? rrr.name.trim() : ''
+            const mimeType = typeof rrr.mimeType === 'string' && rrr.mimeType.trim() ? (rrr.mimeType as string).trim() : undefined
+            if ((!blobId && !url) || !name) return null
+            return { kind: 'video' as const, ...(blobId ? { blobId } : {}), ...(url ? { url } : {}), name, mimeType }
+          }
+          return null
+        })
+        .filter(Boolean) as TaskReferenceItem[]
+      if (!normalized.length) return undefined
+      return { kind: 'items' as const, items: normalized }
     }
     return undefined
   })()

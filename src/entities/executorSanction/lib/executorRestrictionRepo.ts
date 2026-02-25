@@ -63,6 +63,24 @@ export const executorRestrictionRepo = {
     return store[executorId]
   },
 
+  unblock(executorId: string) {
+    const store = readAll()
+    const prev = this.get(executorId)
+    store[executorId] = {
+      ...prev,
+      accountStatus: 'active',
+      respondBlockedUntil: undefined,
+      updatedAt: nowIso(),
+    }
+    writeAll(store)
+    return store[executorId]
+  },
+
+  listBanned(): string[] {
+    const store = readAll()
+    return Object.keys(store).filter((id) => (store[id] as any).accountStatus === 'banned')
+  },
+
   canRespond(
     executorId: string,
     nowMs: number = Date.now(),

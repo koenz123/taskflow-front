@@ -24,6 +24,9 @@ let apiHasLoaded = false
 let apiLoadedForToken: string | null = null
 let apiPollId: number | null = null
 
+/** Dispute IDs the user has viewed this session; we keep notifications for these as read after each API refetch. */
+const viewedDisputeIds = new Set<string>()
+
 function notifyApi() {
   for (const cb of apiStore.subs) cb()
 }
@@ -55,6 +58,7 @@ const KNOWN_TYPES = new Set<Notification['type']>([
   'executor_violation_rating_penalty',
   'executor_violation_respond_block',
   'executor_violation_ban',
+  'support_message',
 ])
 
 function normalizeType(raw: unknown): Notification['type'] {
@@ -165,13 +169,18 @@ function normalizeNotification(raw: any): Notification | null {
     recipientUserId: safeRecipient,
     actorUserId,
     taskId,
-    disputeId: raw.disputeId ? String(raw.disputeId) : meta?.disputeId ? String(meta.disputeId) : undefined,
+    disputeId:
+      (raw.disputeId ? String(raw.disputeId) : null) ??
+      (meta?.disputeId ? String(meta.disputeId) : null) ??
+      (raw.dispute_id ? String(raw.dispute_id) : null) ??
+      (meta?.dispute_id ? String(meta.dispute_id) : null) ??
+      undefined,
     disputeStatus: raw.disputeStatus ? String(raw.disputeStatus) : undefined,
     slaHoursLeft: typeof raw.slaHoursLeft === 'number' ? raw.slaHoursLeft : undefined,
     completionVideoUrl: raw.completionVideoUrl ? String(raw.completionVideoUrl) : undefined,
     message: raw.message ? String(raw.message) : raw.text ? String(raw.text) : undefined,
     violationId: raw.violationId ? String(raw.violationId) : undefined,
-    violationType: raw.violationType === 'no_start_12h' || raw.violationType === 'no_submit_24h' ? raw.violationType : undefined,
+    violationType: raw.violationType === 'no_start_12h' || raw.violationType === 'no_submit_24h' || raw.violationType === 'force_majeure_abuse' ? raw.violationType : undefined,
     sanctionDeltaPercent: typeof raw.sanctionDeltaPercent === 'number' ? raw.sanctionDeltaPercent : undefined,
     sanctionUntil: raw.sanctionUntil ? String(raw.sanctionUntil) : undefined,
     sanctionDurationHours: typeof raw.sanctionDurationHours === 'number' ? raw.sanctionDurationHours : undefined,
@@ -217,6 +226,22 @@ export function markNotificationsReadOptimistic(notificationIds: string[]) {
   if (changed) setApiSnapshot(next)
 }
 
+/** Mark all notifications for this dispute as read in API snapshot. Call when user opens a dispute so the badge updates. */
+export function markReadForDisputeOptimistic(disputeId: string) {
+  if (!USE_API || !disputeId?.trim()) return
+  const id = String(disputeId).trim()
+  viewedDisputeIds.add(id)
+  const now = new Date().toISOString()
+  let changed = false
+  const next = apiSnapshot.map((n) => {
+    if (n.disputeId !== id) return n
+    if (n.readAt) return n
+    changed = true
+    return { ...n, readAt: now }
+  })
+  if (changed) setApiSnapshot(next)
+}
+
 export function markAllNotificationsReadOptimistic() {
   if (!USE_API) return
   const now = new Date().toISOString()
@@ -235,6 +260,7 @@ export async function fetchNotifications() {
   if (apiLoadedForToken !== token) {
     apiLoadedForToken = token
     apiHasLoaded = false
+    viewedDisputeIds.clear()
   }
   if (apiHasLoaded) return
   if (apiRefreshing) return
@@ -258,9 +284,16 @@ export async function fetchNotifications() {
               ? raw.data
               : []
 
-    const list = items
+    let list = items
       .map(normalizeNotification)
       .filter(Boolean) as Notification[]
+    if (viewedDisputeIds.size > 0) {
+      const now = new Date().toISOString()
+      list = list.map((n) => {
+        if (n.disputeId && viewedDisputeIds.has(n.disputeId) && !n.readAt) return { ...n, readAt: now }
+        return n
+      })
+    }
     setApiSnapshot(list)
     apiHasLoaded = true
 

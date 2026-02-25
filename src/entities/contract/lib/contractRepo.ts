@@ -43,10 +43,16 @@ function normalizeStatus(value: unknown): ContractStatus {
   return 'active'
 }
 
-function normalize(raw: unknown): Contract | null {
+/** Normalize raw API contract; supports id or _id (Mongo). */
+export function normalizeContract(raw: unknown): Contract | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as Record<string, unknown>
-  const id = typeof r.id === 'string' ? r.id : createId('contract')
+  const id =
+    typeof r.id === 'string' && r.id.trim()
+      ? r.id.trim()
+      : typeof (r as any)._id === 'string'
+        ? String((r as any)._id)
+        : createId('contract')
   const taskId = typeof r.taskId === 'string' ? r.taskId : ''
   const clientId = typeof r.clientId === 'string' ? r.clientId : ''
   const executorId = typeof r.executorId === 'string' ? r.executorId : ''
@@ -92,6 +98,10 @@ function normalize(raw: unknown): Contract | null {
   }
 
   return c
+}
+
+function normalize(raw: unknown): Contract | null {
+  return normalizeContract(raw)
 }
 
 export const contractRepo = {

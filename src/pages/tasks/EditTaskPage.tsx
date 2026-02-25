@@ -181,6 +181,7 @@ export function EditTaskPage() {
               value={form.title}
               onChange={(e) => setField('title', e.target.value)}
               onBlur={() => setTouched((t) => ({ ...t, title: true }))}
+              autoComplete="off"
             />
             {visibleErrors.title ? <span className="field__error">{visibleErrors.title}</span> : null}
           </label>
@@ -197,6 +198,7 @@ export function EditTaskPage() {
               value={form.shortDescription}
               onChange={(e) => setField('shortDescription', e.target.value)}
               onBlur={() => setTouched((t) => ({ ...t, shortDescription: true }))}
+              autoComplete="off"
             />
             {visibleErrors.shortDescription ? (
               <span className="field__error">{visibleErrors.shortDescription}</span>
@@ -216,6 +218,7 @@ export function EditTaskPage() {
               onChange={(e) => setField('requirements', e.target.value)}
               onBlur={() => setTouched((t) => ({ ...t, requirements: true }))}
               rows={4}
+              autoComplete="off"
             />
             {visibleErrors.requirements ? <span className="field__error">{visibleErrors.requirements}</span> : null}
           </label>
@@ -232,6 +235,7 @@ export function EditTaskPage() {
               value={form.description}
               onChange={(e) => setField('description', e.target.value)}
               onBlur={() => setTouched((t) => ({ ...t, description: true }))}
+              autoComplete="off"
             />
             {visibleErrors.description ? <span className="field__error">{visibleErrors.description}</span> : null}
           </label>
@@ -244,6 +248,7 @@ export function EditTaskPage() {
                 value={form.category}
                 onChange={(e) => setField('category', e.target.value)}
                 onBlur={() => setTouched((t) => ({ ...t, category: true }))}
+                autoComplete="off"
               />
             </label>
 
@@ -254,6 +259,7 @@ export function EditTaskPage() {
                 value={form.location}
                 onChange={(e) => setField('location', e.target.value)}
                 onBlur={() => setTouched((t) => ({ ...t, location: true }))}
+                autoComplete="off"
               />
             </label>
           </div>
@@ -267,6 +273,7 @@ export function EditTaskPage() {
                 onChange={(e) => setField('budgetAmount', e.target.value)}
                 onBlur={() => setTouched((t) => ({ ...t, budgetAmount: true }))}
                 inputMode="decimal"
+                autoComplete="off"
               />
             </label>
 
@@ -277,6 +284,7 @@ export function EditTaskPage() {
                 value={form.budgetCurrency}
                 onChange={(e) => setField('budgetCurrency', e.target.value)}
                 onBlur={() => setTouched((t) => ({ ...t, budgetCurrency: true }))}
+                autoComplete="off"
               />
             </label>
           </div>
@@ -292,6 +300,7 @@ export function EditTaskPage() {
               onBlur={() => setTouched((t) => ({ ...t, maxExecutors: true }))}
               placeholder={t('task.create.maxExecutors.placeholder')}
               inputMode="numeric"
+              autoComplete="off"
               min={1}
               max={10}
             />

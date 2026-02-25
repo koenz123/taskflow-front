@@ -8,6 +8,7 @@ import { useApplications } from '@/entities/task/lib/useApplications'
 import { useContracts } from '@/entities/contract/lib/useContracts'
 import { useTaskAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
 import { useNotifications } from '@/entities/notification/lib/useNotifications'
+import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import './sidebar.css'
 import { Icon, type IconName } from '@/shared/ui/icon/Icon'
 
@@ -21,6 +22,12 @@ export function Sidebar() {
   const assignments = useTaskAssignments()
   useNotifications(auth.user?.id ?? null)
   const [isMobileOpen, setIsMobileOpen] = useState(false)
+
+  const supportInboxBadgeCount =
+    auth.user?.role === 'arbiter' && auth.user?.id
+      ? notificationRepo.unreadSupportThreadCountForUser(auth.user.id)
+      : 0
+  const supportInboxBadgeText = supportInboxBadgeCount > 99 ? '99+' : String(supportInboxBadgeCount)
 
   // Закрываем мобильное меню при смене маршрута
   useEffect(() => {
@@ -86,6 +93,19 @@ export function Sidebar() {
       show: auth.user?.role === 'arbiter',
     },
     {
+      path: paths.supportInbox,
+      icon: 'chat',
+      label: locale === 'ru' ? 'Обращения' : 'Support',
+      show: auth.user?.role === 'arbiter',
+      badgeCount: supportInboxBadgeCount,
+    },
+    {
+      path: paths.blockedUsers,
+      icon: 'ban',
+      label: locale === 'ru' ? 'Заблокированные' : 'Blocked users',
+      show: auth.user?.role === 'arbiter',
+    },
+    {
       path: paths.tasks,
       icon: 'clipboard',
       label: t('nav.tasks'),
@@ -104,6 +124,12 @@ export function Sidebar() {
       label: t('nav.myTasks'),
       show: auth.user?.role === 'customer',
       badgeCount: myTasksBadgeCount,
+    },
+    {
+      path: paths.support,
+      icon: 'chat',
+      label: locale === 'ru' ? 'Поддержка' : 'Support',
+      show: !!auth.user && auth.user.role !== 'arbiter',
     },
     {
       path: paths.profile,
@@ -181,7 +207,11 @@ export function Sidebar() {
                       title={`${item.label}: ${item.badgeCount}`}
                       aria-label={`${item.label}: ${item.badgeCount}`}
                     >
-                      {item.path === paths.customerTasks ? myTasksBadgeText : item.badgeCount}
+                      {item.path === paths.customerTasks
+                        ? myTasksBadgeText
+                        : item.path === paths.supportInbox
+                          ? supportInboxBadgeText
+                          : item.badgeCount}
                     </span>
                   ) : null}
                 </Link>

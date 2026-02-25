@@ -10,6 +10,7 @@ import { pickText } from '@/entities/task/lib/taskText'
 import { useUsers } from '@/entities/user/lib/useUsers'
 import { postDisputeMessage, useDisputeMessages } from '@/entities/disputeMessage/lib/useDisputeMessages'
 import { disputeMessageRepo } from '@/entities/disputeMessage/lib/disputeMessageRepo'
+import { markReadForDisputeOptimistic } from '@/entities/notification/lib/useNotifications'
 import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import { auditLogRepo } from '@/entities/auditLog/lib/auditLogRepo'
 import './dispute-thread.css'
@@ -47,18 +48,7 @@ export function DisputeThreadPage() {
   const tasks = useTasks()
   const users = useUsers()
 
-  // In theory this page is guarded by auth routes, but keep it resilient to transient nulls.
   const user = auth.user
-  if (!user) {
-    return (
-      <main className="disputeThreadPage">
-        <div className="disputeThreadContainer">
-          <h1 className="disputeThreadTitle">{locale === 'ru' ? 'Загрузка…' : 'Loading…'}</h1>
-        </div>
-      </main>
-    )
-  }
-
   const dispute = disputeId ? disputes.find((d) => d.id === disputeId) ?? null : null
   const contract = useMemo(() => (dispute ? contracts.find((c) => c.id === dispute.contractId) ?? null : null), [contracts, dispute])
   const task = useMemo(() => (contract ? tasks.find((t) => t.id === contract.taskId) ?? null : null), [contract, tasks])
@@ -78,24 +68,16 @@ export function DisputeThreadPage() {
 
   const allowed = useMemo(() => {
     if (!dispute || !contract) return false
+    if (!user) return false
     if (participants.customerId && userIdMatches(user, participants.customerId)) return true
     if (participants.executorId && userIdMatches(user, participants.executorId)) return true
-    if (user.role === 'arbiter' && user.id === participants.arbiterId) return true
+    if (user.role === 'arbiter') return true
     return false
-  }, [contract, dispute, participants.arbiterId, participants.customerId, participants.executorId, user.id, user.role])
-
-  // Arbiter gets full workspace instead of party chat.
-  if (user.role === 'arbiter' && user.id === participants.arbiterId) {
-    return <DisputeWorkspacePage />
-  }
+  }, [contract, dispute, participants.customerId, participants.executorId, user])
 
   const messages = useDisputeMessages(dispute?.id ?? null)
-  const visibleMessages = useMemo(() => {
-    const isArbiter = user.role === 'arbiter' && user.id === participants.arbiterId
-    return isArbiter ? messages : messages.filter((m) => m.kind !== 'internal')
-  }, [messages, participants.arbiterId, user.id, user.role])
+  const visibleMessages = useMemo(() => messages.filter((m) => m.kind !== 'internal'), [messages])
   const [text, setText] = useState('')
-  const [internal, setInternal] = useState(false)
   const listRef = useRef<HTMLDivElement | null>(null)
 
   const taskTitle = task ? pickText(task.title, locale) : contract?.taskId ?? dispute?.contractId ?? ''
@@ -105,15 +87,29 @@ export function DisputeThreadPage() {
   const arbiter = users.find((u) => u.id === participants.arbiterId) ?? null
 
   useEffect(() => {
-    if (!dispute) return
-    notificationRepo.markReadForDispute(user.id, dispute.id)
-  }, [dispute, user.id])
+    if (!disputeId?.trim() || !user?.id) return
+    if (USE_API) markReadForDisputeOptimistic(disputeId)
+    else notificationRepo.markReadForDispute(user.id, disputeId)
+  }, [disputeId, user?.id])
 
   useEffect(() => {
-    // scroll to bottom on new messages
     if (!listRef.current) return
     listRef.current.scrollTop = listRef.current.scrollHeight
   }, [visibleMessages.length])
+
+  if (!user) {
+    return (
+      <main className="disputeThreadPage">
+        <div className="disputeThreadContainer">
+          <h1 className="disputeThreadTitle">{locale === 'ru' ? 'Загрузка…' : 'Loading…'}</h1>
+        </div>
+      </main>
+    )
+  }
+
+  if (user.role === 'arbiter') {
+    return <DisputeWorkspacePage />
+  }
 
   // Avoid showing "not found" before the first API fetch completes.
   if (USE_API && disputeId && disputes.length === 0) {
@@ -236,161 +232,74 @@ export function DisputeThreadPage() {
             )}
           </div>
 
-          {user.role === 'arbiter' && user.id === participants.arbiterId ? (
-            <div style={{ padding: '0 12px 10px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className="linkBtn"
-                onClick={() => {
-                  if (!dispute) return
-                  const txt = locale === 'ru' ? 'Укажите таймкод несоответствия.' : 'Please provide the exact timestamp of the mismatch.'
-                  if (USE_API) {
-                    void postDisputeMessage({ disputeId: dispute.id, text: txt, kind: 'system' })
-                      .then(() => refreshNotifications())
-                      .catch(() => {})
-                  } else {
-                    const msg = disputeMessageRepo.addSystem({ disputeId: dispute.id, text: txt })
-                    auditLogRepo.add({
-                      disputeId: dispute.id,
-                      actionType: 'system_message',
-                      actorUserId: user.id,
-                      summary: locale === 'ru' ? 'Запрос: таймкод несоответствия' : 'Request: mismatch timestamp',
-                      payload: { messageId: msg.id },
-                    })
-                  }
-                }}
-              >
-                {locale === 'ru' ? 'Запросить таймкод' : 'Request timestamp'}
-              </button>
-              <button
-                type="button"
-                className="linkBtn"
-                onClick={() => {
-                  if (!dispute) return
-                  const txt = locale === 'ru' ? 'Пришлите исходники (если есть).' : 'Please provide source files (if available).'
-                  if (USE_API) {
-                    void postDisputeMessage({ disputeId: dispute.id, text: txt, kind: 'system' })
-                      .then(() => refreshNotifications())
-                      .catch(() => {})
-                  } else {
-                    const msg = disputeMessageRepo.addSystem({ disputeId: dispute.id, text: txt })
-                    auditLogRepo.add({
-                      disputeId: dispute.id,
-                      actionType: 'system_message',
-                      actorUserId: user.id,
-                      summary: locale === 'ru' ? 'Запрос: исходники' : 'Request: source files',
-                      payload: { messageId: msg.id },
-                    })
-                  }
-                }}
-              >
-                {locale === 'ru' ? 'Запросить исходники' : 'Request sources'}
-              </button>
-              <button
-                type="button"
-                className="linkBtn"
-                onClick={() => {
-                  if (!dispute) return
-                  const txt = locale === 'ru' ? 'Уточните пункт ТЗ, на который вы ссылаетесь.' : 'Please clarify which requirement item you refer to.'
-                  if (USE_API) {
-                    void postDisputeMessage({ disputeId: dispute.id, text: txt, kind: 'system' })
-                      .then(() => refreshNotifications())
-                      .catch(() => {})
-                  } else {
-                    const msg = disputeMessageRepo.addSystem({ disputeId: dispute.id, text: txt })
-                    auditLogRepo.add({
-                      disputeId: dispute.id,
-                      actionType: 'system_message',
-                      actorUserId: auth.user!.id,
-                      summary: locale === 'ru' ? 'Запрос: уточнение пункта ТЗ' : 'Request: requirement item clarification',
-                      payload: { messageId: msg.id },
-                    })
-                  }
-                }}
-              >
-                {locale === 'ru' ? 'Уточнить пункт ТЗ' : 'Clarify requirement'}
-              </button>
+          {/* Arbiter-only quick actions live in DisputeWorkspacePage; this branch is customer/executor only */}
+
+          {dispute.status === 'closed' ? (
+            <div className="disputeChatClosed" role="status">
+              {locale === 'ru'
+                ? 'Спор закрыт. Новые сообщения отправлять нельзя.'
+                : 'Dispute is closed. You cannot send new messages.'}
             </div>
-          ) : null}
+          ) : (
+            <form
+              className="disputeChatComposer"
+              onSubmit={(e) => {
+                e.preventDefault()
+                const trimmed = text.trim()
+                if (!trimmed) return
+                if (!dispute) return
+                if (USE_API) {
+                  void postDisputeMessage({ disputeId: dispute.id, text: trimmed, kind: 'public' })
+                    .then(() => {
+                      setText('')
+                      return refreshNotifications()
+                    })
+                    .catch(() => {})
+                  return
+                }
+                const msg = disputeMessageRepo.add({ disputeId: dispute.id, authorUserId: auth.user!.id, kind: 'public', text: trimmed })
+                setText('')
 
-          <form
-            className="disputeChatComposer"
-            onSubmit={(e) => {
-              e.preventDefault()
-              const trimmed = text.trim()
-              if (!trimmed) return
-              if (!dispute) return
-              const isArbiter = auth.user?.role === 'arbiter' && auth.user.id === participants.arbiterId
-              const kind = isArbiter && internal ? 'internal' : 'public'
-              if (USE_API) {
-                void postDisputeMessage({ disputeId: dispute.id, text: trimmed, kind })
-                  .then(() => {
-                    setText('')
-                    return refreshNotifications()
+                const taskId = contract.taskId
+                const notifyArbiter = Boolean(dispute.assignedArbiterId && dispute.assignedArbiterId === participants.arbiterId)
+                const targets = [
+                  participants.customerId,
+                  participants.executorId,
+                  ...(notifyArbiter ? [participants.arbiterId] : []),
+                ].filter(Boolean) as string[]
+                for (const uid of targets) {
+                  if (uid === auth.user!.id) continue
+                  notificationRepo.addDisputeMessage({
+                    recipientUserId: uid,
+                    actorUserId: auth.user!.id,
+                    taskId,
+                    disputeId: dispute.id,
+                    message: msg.text,
                   })
-                  .catch(() => {})
-                return
-              }
-              const msg = disputeMessageRepo.add({ disputeId: dispute.id, authorUserId: auth.user!.id, kind, text: trimmed })
-              setText('')
+                }
 
-              const taskId = contract.taskId
-              const notifyArbiter = Boolean(dispute.assignedArbiterId && dispute.assignedArbiterId === participants.arbiterId)
-              const targets = [
-                participants.customerId,
-                participants.executorId,
-                ...(notifyArbiter ? [participants.arbiterId] : []),
-              ].filter(Boolean) as string[]
-              for (const uid of targets) {
-                if (uid === auth.user!.id) continue
-                // Internal notes are not sent to parties.
-                if (kind === 'internal' && uid !== participants.arbiterId) continue
-                notificationRepo.addDisputeMessage({
-                  recipientUserId: uid,
-                  actorUserId: auth.user!.id,
-                  taskId,
+                auditLogRepo.add({
                   disputeId: dispute.id,
-                  message: msg.text,
+                  actionType: 'public_message',
+                  actorUserId: auth.user!.id,
+                  summary: locale === 'ru' ? 'Сообщение в споре' : 'Dispute message',
+                  payload: { messageId: msg.id },
                 })
-              }
-
-              auditLogRepo.add({
-                disputeId: dispute.id,
-                actionType: kind === 'internal' ? 'internal_comment' : 'public_message',
-                actorUserId: auth.user!.id,
-                summary:
-                  kind === 'internal'
-                    ? locale === 'ru'
-                      ? 'Внутренний комментарий'
-                      : 'Internal comment'
-                    : locale === 'ru'
-                      ? 'Сообщение в споре'
-                      : 'Dispute message',
-                payload: { messageId: msg.id },
-              })
-            }}
-          >
-            {user.role === 'arbiter' && user.id === participants.arbiterId ? (
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, opacity: 0.9 }}>
-                <input
-                  type="checkbox"
-                  checked={internal}
-                  onChange={(e) => setInternal(e.target.checked)}
-                />
-                {locale === 'ru' ? 'Внутреннее (не видно сторонам)' : 'Internal (hidden from parties)'}
-              </label>
-            ) : null}
-            <textarea
-              className="disputeChatInput"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              rows={3}
-              placeholder={locale === 'ru' ? 'Напишите сообщение…' : 'Write a message…'}
-            />
-            <button className="disputeChatSend" type="submit" disabled={!text.trim()}>
-              {locale === 'ru' ? 'Отправить' : 'Send'}
-            </button>
-          </form>
+              }}
+            >
+              <textarea
+                className="disputeChatInput"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                rows={3}
+                placeholder={locale === 'ru' ? 'Напишите сообщение…' : 'Write a message…'}
+                autoComplete="off"
+              />
+              <button className="disputeChatSend" type="submit" disabled={!text.trim()}>
+                {locale === 'ru' ? 'Отправить' : 'Send'}
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </main>

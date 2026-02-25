@@ -13,6 +13,10 @@ export const paths = {
   violations: '/violations',
   disputes: '/disputes',
   disputeThread: '/disputes/:disputeId',
+  support: '/support',
+  supportInbox: '/support-inbox',
+  supportThread: '/support-inbox/:threadId',
+  blockedUsers: '/blocked-users',
   userProfile: '/users/:userId',
   userReviews: '/users/:userId/reviews',
   reportProfile: '/report/:userId',
@@ -54,4 +58,8 @@ export function worksPath(userId: string) {
 
 export function disputeThreadPath(disputeId: string) {
   return `/disputes/${disputeId}`
+}
+
+export function supportThreadPath(threadId: string) {
+  return `/support-inbox/${threadId}`
 }

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import type { Contract } from '../model/contract'
-import { contractRepo } from './contractRepo'
+import { contractRepo, normalizeContract } from './contractRepo'
 import { api } from '@/shared/api/api'
 import { sessionRepo } from '@/shared/auth/sessionRepo'
 
@@ -55,20 +55,48 @@ export async function fetchContracts() {
     return
   }
   try {
-    const next = await api.get<Contract[]>('/contracts')
-    if (!sameList(apiSnapshot, next)) apiSnapshot = next
+    const raw = await api.get<unknown>('/contracts')
+    let next: Contract[] = Array.isArray(raw)
+      ? (raw as unknown[]).map((x) => normalizeContract(x)).filter((c): c is Contract => c != null)
+      : []
+    // Keep contracts from current snapshot not in API response (e.g. arbiter viewing dispute, GET /contracts returns [] or filtered)
+    for (const c of apiSnapshot) {
+      if (!next.some((x) => x.id === c.id)) next.push(c)
+    }
+    if (!sameList(apiSnapshot, next)) {
+      apiSnapshot = next
+      notifyApi()
+    }
     apiHasLoaded = true
   } catch {
     // keep previous
   }
   apiRefreshing = false
-  notifyApi()
 }
 
 export async function refreshContracts() {
   if (!USE_API) return
   apiHasLoaded = false
   await fetchContracts()
+}
+
+/** Load a single contract by ID (e.g. for arbiter when list is empty). Merges into api snapshot. */
+export async function fetchContractById(contractId: string): Promise<Contract | null> {
+  if (!USE_API || !contractId?.trim()) return null
+  const token = sessionRepo.getToken()
+  if (!token) return null
+  try {
+    const raw = await api.get<unknown>(`/contracts/${encodeURIComponent(contractId)}`)
+    const c = normalizeContract(raw)
+    if (!c) return null
+    if (!apiSnapshot.some((x) => x.id === c.id)) {
+      apiSnapshot = [...apiSnapshot, c]
+      notifyApi()
+    }
+    return c
+  } catch {
+    return null
+  }
 }
 
 function subscribeApi(cb: () => void) {

@@ -4,17 +4,16 @@ import { paths, taskDetailsPath, userProfilePath } from '@/app/router/paths'
 import { useAuth } from '@/shared/auth/AuthContext'
 import { useI18n } from '@/shared/i18n/I18nContext'
 import { disputeRepo } from '@/entities/dispute/lib/disputeRepo'
-import { refreshDisputes, useDisputes } from '@/entities/dispute/lib/useDisputes'
-import { useContracts } from '@/entities/contract/lib/useContracts'
+import { fetchDisputeById, refreshDisputes, useDisputes } from '@/entities/dispute/lib/useDisputes'
+import { fetchContractById, useContracts } from '@/entities/contract/lib/useContracts'
 import { useTasks } from '@/entities/task/lib/useTasks'
 import { pickText } from '@/entities/task/lib/taskText'
 import { useUsers } from '@/entities/user/lib/useUsers'
-import { useSubmissions } from '@/entities/submission/lib/useSubmissions'
+import { refreshSubmissions, useSubmissions } from '@/entities/submission/lib/useSubmissions'
 import { VideoEmbed } from '@/shared/ui/VideoEmbed'
 import { balanceFreezeRepo } from '@/entities/user/lib/balanceFreezeRepo'
 import { postDisputeMessage, refreshDisputeMessages, useDisputeMessages } from '@/entities/disputeMessage/lib/useDisputeMessages'
 import { disputeMessageRepo } from '@/entities/disputeMessage/lib/disputeMessageRepo'
-import { useAuditLog } from '@/entities/auditLog/lib/useAuditLog'
 import { auditLogRepo } from '@/entities/auditLog/lib/auditLogRepo'
 import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import { disputeArbitrationService } from '@/shared/services/disputeArbitrationService'
@@ -22,7 +21,7 @@ import { CustomSelect } from '@/shared/ui/custom-select/CustomSelect'
 import { getBlob } from '@/shared/lib/blobStore'
 import './dispute-workspace.css'
 import { ApiError, api } from '@/shared/api/api'
-import { refreshNotifications } from '@/entities/notification/lib/useNotifications'
+import { markReadForDisputeOptimistic, refreshNotifications } from '@/entities/notification/lib/useNotifications'
 import { refreshContracts } from '@/entities/contract/lib/useContracts'
 import { refreshAssignments } from '@/entities/taskAssignment/lib/useTaskAssignments'
 import { refreshTasks } from '@/entities/task/lib/useTasks'
@@ -128,23 +127,42 @@ export function DisputeWorkspacePage() {
   const users = useUsers()
   const submissions = useSubmissions()
 
-  // Keep page resilient even if auth/user is temporarily null.
   const user = auth.user
-  if (!user) {
-    return (
-      <main className="disputeWsPage">
-        <div className="disputeWsContainer">
-          <h1 className="disputeWsTitle">{locale === 'ru' ? 'Загрузка…' : 'Loading…'}</h1>
-        </div>
-      </main>
-    )
-  }
-
   const dispute = disputeId ? disputes.find((d) => d.id === disputeId) ?? null : null
+  const [singleDisputeFetchDone, setSingleDisputeFetchDone] = useState<Record<string, boolean>>({})
+  useEffect(() => {
+    if (!USE_API || !disputeId || dispute !== null) return
+    if (singleDisputeFetchDone[disputeId]) return
+    let cancelled = false
+    fetchDisputeById(disputeId).finally(() => {
+      if (!cancelled) setSingleDisputeFetchDone((prev) => ({ ...prev, [disputeId]: true }))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [disputeId, dispute, singleDisputeFetchDone])
   const contract = useMemo(
     () => (dispute ? contracts.find((c) => c.id === dispute.contractId) ?? null : null),
     [contracts, dispute],
   )
+  const [singleContractFetchDone, setSingleContractFetchDone] = useState<Record<string, boolean>>({})
+  useEffect(() => {
+    if (!USE_API || !dispute?.contractId || contract !== null) return
+    const contractId = dispute.contractId
+    if (singleContractFetchDone[contractId]) return
+    let cancelled = false
+    fetchContractById(contractId).finally(() => {
+      if (!cancelled) setSingleContractFetchDone((prev) => ({ ...prev, [contractId]: true }))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [dispute?.contractId, contract, singleContractFetchDone])
+
+  useEffect(() => {
+    if (USE_API && contract?.id) void refreshSubmissions()
+  }, [USE_API, contract?.id])
+
   const task = useMemo(
     () => (contract ? tasks.find((t) => t.id === contract.taskId) ?? null : null),
     [contract, tasks],
@@ -163,13 +181,12 @@ export function DisputeWorkspacePage() {
     return { customerId, executorId, arbiterId }
   }, [contract, dispute])
 
-  const isArbiter = Boolean(user.role === 'arbiter' && user.id === participants.arbiterId)
+  const isArbiter = user?.role === 'arbiter'
   const allowed = Boolean(dispute && contract && isArbiter)
 
   const customer = participants.customerId ? users.find((u) => userIdMatches(u, participants.customerId)) ?? null : null
   const executor = participants.executorId ? users.find((u) => userIdMatches(u, participants.executorId)) ?? null : null
 
-  const audit = useAuditLog(dispute?.id ?? null)
   const messages = useDisputeMessages(dispute?.id ?? null)
 
   const takeInWorkApi = async (expectedVersion?: number) => {
@@ -177,7 +194,7 @@ export function DisputeWorkspacePage() {
     await api.post(`/disputes/${encodeURIComponent(dispute.id)}/take-in-work`, {
       ...(typeof expectedVersion === 'number' ? { expectedVersion } : null),
     })
-    await Promise.all([refreshDisputes(), refreshNotifications()])
+    await Promise.all([fetchDisputeById(dispute.id), refreshDisputes(), refreshNotifications()])
   }
 
   const requestMoreInfoApi = async (expectedVersion?: number) => {
@@ -185,13 +202,19 @@ export function DisputeWorkspacePage() {
     await api.post(`/disputes/${encodeURIComponent(dispute.id)}/request-more-info`, {
       ...(typeof expectedVersion === 'number' ? { expectedVersion } : null),
     })
-    await Promise.all([refreshDisputes(), refreshNotifications()])
+    await Promise.all([
+      fetchDisputeById(dispute.id),
+      refreshDisputes(),
+      refreshDisputeMessages(dispute.id),
+      refreshNotifications(),
+    ])
   }
 
   const closeDisputeApi = async () => {
     if (!dispute) return
     await api.post(`/disputes/${encodeURIComponent(dispute.id)}/close`, {})
-    await Promise.all([refreshDisputes(), refreshNotifications()])
+    await Promise.all([fetchDisputeById(dispute.id), refreshDisputes(), refreshNotifications()])
+    navigate(paths.disputes)
   }
 
   const actionErrorText = (e: unknown) => {
@@ -229,6 +252,7 @@ export function DisputeWorkspacePage() {
       }
     }
     await Promise.all([
+      fetchDisputeById(dispute.id),
       refreshDisputes(),
       refreshContracts(),
       refreshAssignments(),
@@ -265,9 +289,10 @@ export function DisputeWorkspacePage() {
   }, [])
 
   useEffect(() => {
-    if (!dispute) return
-    notificationRepo.markReadForDispute(user.id, dispute.id)
-  }, [dispute, user.id])
+    if (!disputeId?.trim() || !user?.id) return
+    if (USE_API) markReadForDisputeOptimistic(disputeId)
+    else notificationRepo.markReadForDispute(user.id, disputeId)
+  }, [disputeId, user?.id])
 
   // Decision draft (autosave later; for now local state)
   const [decisionKind, setDecisionKind] = useState<DecisionKind>('release_to_executor')
@@ -283,8 +308,29 @@ export function DisputeWorkspacePage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [arbiterDraft, setArbiterDraft] = useState('')
 
-  // Avoid showing "not found" before the first API fetch completes.
-  if (USE_API && disputeId && disputes.length === 0) {
+  const decisionOptions = useMemo<Array<{ value: DecisionKind; label: string }>>(
+    () => [
+      { value: 'release_to_executor', label: decisionLabel('release_to_executor', locale) },
+      { value: 'refund_to_customer', label: decisionLabel('refund_to_customer', locale) },
+      { value: 'partial_refund', label: decisionLabel('partial_refund', locale) },
+    ],
+    [locale],
+  )
+
+  if (!user) {
+    return (
+      <main className="disputeWsPage">
+        <div className="disputeWsContainer">
+          <h1 className="disputeWsTitle">{locale === 'ru' ? 'Загрузка…' : 'Loading…'}</h1>
+        </div>
+      </main>
+    )
+  }
+
+  // Avoid showing "not found" before the first API fetch completes, or while loading single dispute/contract by ID.
+  const loadingSingleDispute = USE_API && disputeId && !dispute && !singleDisputeFetchDone[disputeId]
+  const loadingSingleContract = USE_API && dispute && !contract && dispute.contractId && !singleContractFetchDone[dispute.contractId]
+  if (USE_API && disputeId && (disputes.length === 0 || loadingSingleDispute || loadingSingleContract)) {
     return (
       <main className="disputeWsPage">
         <div className="disputeWsContainer">
@@ -357,15 +403,6 @@ export function DisputeWorkspacePage() {
 
   const confirmDisabled =
     !comment.trim() || !checkedReq || !checkedVideo || !checkedChat || !canDecide
-
-  const decisionOptions = useMemo<Array<{ value: DecisionKind; label: string }>>(
-    () => [
-      { value: 'release_to_executor', label: decisionLabel('release_to_executor', locale) },
-      { value: 'refund_to_customer', label: decisionLabel('refund_to_customer', locale) },
-      { value: 'partial_refund', label: decisionLabel('partial_refund', locale) },
-    ],
-    [locale],
-  )
 
   return (
     <main className="disputeWsPage">
@@ -509,27 +546,6 @@ export function DisputeWorkspacePage() {
                 </div>
               )}
             </div>
-
-            <div className="disputeWsPanel">
-              <div className="disputeWsPanel__title">{locale === 'ru' ? 'История (audit)' : 'Audit log'}</div>
-              {audit.length === 0 ? (
-                <div className="disputeWsEmpty">{locale === 'ru' ? 'Пока пусто.' : 'No events yet.'}</div>
-              ) : (
-                <div className="disputeWsList">
-                  {audit.map((e) => (
-                    <div key={e.id} className="disputeWsAudit">
-                      <div className="disputeWsAudit__top">
-                        <span className="disputeWsMono">{e.actionType}</span>
-                        <span className="disputeWsMeta">
-                          {new Date(e.createdAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')}
-                        </span>
-                      </div>
-                      <div className="disputeWsAudit__summary">{e.summary}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </section>
 
           {/* Center: communication */}
@@ -573,6 +589,7 @@ export function DisputeWorkspacePage() {
                     placeholder={locale === 'ru' ? 'Сообщение для заказчика и исполнителя…' : 'Message to customer and executor…'}
                     rows={3}
                     disabled={!canChatActions}
+                    autoComplete="off"
                     onKeyDown={(e) => {
                       const isSubmit = (e.ctrlKey || e.metaKey) && e.key === 'Enter'
                       if (!isSubmit) return
@@ -624,6 +641,16 @@ export function DisputeWorkspacePage() {
                         if (!canChatActions) return
                         const text = arbiterDraft.trim()
                         if (!text) return
+                        if (USE_API) {
+                          setActionError(null)
+                          void postDisputeMessage({ disputeId: dispute.id, text, kind: 'public' })
+                            .then(async () => {
+                              setArbiterDraft('')
+                              await Promise.all([refreshDisputeMessages(dispute.id), refreshNotifications(), refreshDisputes()])
+                            })
+                            .catch((e) => setActionError(actionErrorText(e)))
+                          return
+                        }
                         const msg = disputeMessageRepo.add({
                           disputeId: dispute.id,
                           authorUserId: auth.user!.id,
@@ -787,7 +814,7 @@ export function DisputeWorkspacePage() {
                   <button
                     type="button"
                     className="disputeWsBtn"
-                    disabled={!canDecide || (!!dispute.assignedArbiterId && !isTakenByMe)}
+                    disabled={!canDecide}
                     onClick={() => {
                       const before = dispute.version ?? 1
                       if (USE_API) {
@@ -824,7 +851,7 @@ export function DisputeWorkspacePage() {
                   <button
                     type="button"
                     className="disputeWsBtn"
-                    disabled={!canDecide || (!!dispute.assignedArbiterId && !isTakenByMe)}
+                    disabled={!canDecide}
                     onClick={() => {
                       const before = dispute.version ?? 1
                       if (USE_API) {
@@ -870,6 +897,7 @@ export function DisputeWorkspacePage() {
                         try {
                           setActionError(null)
                           await requestMoreInfoApi(before)
+                          await Promise.all([refreshDisputes(), refreshDisputeMessages(dispute.id), refreshNotifications()])
                         } catch (e) {
                           setActionError(actionErrorText(e))
                         }
@@ -912,18 +940,18 @@ export function DisputeWorkspacePage() {
                 <div className="disputeWsGrid2">
                   <label className="disputeWsField">
                     <span className="disputeWsLabel">{locale === 'ru' ? 'Исполнителю' : 'Executor amount'}</span>
-                    <input className="disputeWsInput" value={partialExecutorAmount} onChange={(e) => setPartialExecutorAmount(e.target.value)} inputMode="decimal" disabled={!canDecide} />
+                    <input className="disputeWsInput" value={partialExecutorAmount} onChange={(e) => setPartialExecutorAmount(e.target.value)} inputMode="decimal" disabled={!canDecide} autoComplete="off" />
                   </label>
                   <label className="disputeWsField">
                     <span className="disputeWsLabel">{locale === 'ru' ? 'Заказчику' : 'Customer amount'}</span>
-                    <input className="disputeWsInput" value={partialCustomerAmount} onChange={(e) => setPartialCustomerAmount(e.target.value)} inputMode="decimal" disabled={!canDecide} />
+                    <input className="disputeWsInput" value={partialCustomerAmount} onChange={(e) => setPartialCustomerAmount(e.target.value)} inputMode="decimal" disabled={!canDecide} autoComplete="off" />
                   </label>
                 </div>
               ) : null}
 
               <label className="disputeWsField">
                 <span className="disputeWsLabel">{locale === 'ru' ? 'Комментарий (обязателен)' : 'Comment (required)'}</span>
-                <textarea className="disputeWsTextarea" value={comment} onChange={(e) => setComment(e.target.value)} rows={4} disabled={!canDecide} />
+                <textarea className="disputeWsTextarea" value={comment} onChange={(e) => setComment(e.target.value)} rows={4} disabled={!canDecide} autoComplete="off" />
               </label>
 
               <div className="disputeWsChecklist">
@@ -982,6 +1010,7 @@ export function DisputeWorkspacePage() {
                       actorUserId: auth.user!.id,
                       summary: locale === 'ru' ? 'Спор закрыт' : 'Dispute closed',
                     })
+                    navigate(paths.disputes)
                   }}
                 >
                   {locale === 'ru' ? 'Закрыть спор' : 'Close dispute'}

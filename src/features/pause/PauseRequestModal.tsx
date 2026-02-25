@@ -95,9 +95,10 @@ export function PauseRequestModal({ open, onClose, onSubmit }: Props) {
             />
           </div>
 
-          <textarea
-            className="pauseModal__detail"
-            placeholder={locale === 'ru' ? 'Комментарий (необязательно)…' : 'Comment (optional)…'}
+<textarea
+          className="pauseModal__detail"
+          placeholder={locale === 'ru' ? 'Комментарий (необязательно)…' : 'Comment (optional)…'}
+          autoComplete="off"
             value={comment}
             onChange={(e) => setComment(e.target.value.slice(0, 500))}
             rows={4}

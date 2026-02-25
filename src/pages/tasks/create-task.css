@@ -37,6 +37,105 @@
   align-items: start;
 }
 
+.createTaskNumberSelectWrap {
+  position: relative;
+  /* Prevent scroll jump when dropdown opens/closes */
+  overflow-anchor: none;
+}
+
+/* Allow label to wrap so "Количество исполнителей" etc. is not clipped */
+.createTaskNumberSelectWrap .field__labelRow {
+  min-width: 0;
+  overflow: visible;
+}
+.createTaskNumberSelectWrap .field__label {
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: break-word;
+}
+
+.createTaskNumberSelect {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  position: relative;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+.createTaskNumberSelect:hover {
+  border-color: var(--border3);
+  background: var(--surface2);
+}
+
+.createTaskNumberSelect:focus-within {
+  border-color: rgb(var(--accent-rgb) / 0.55);
+  box-shadow: 0 0 0 4px var(--ring);
+}
+
+.createTaskNumberSelect .field__input.createTaskNumberSelect__input,
+.createTaskNumberSelect__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  border-radius: 14px 0 0 14px;
+  padding: 12px 14px;
+}
+
+.createTaskNumberSelect .field__input.createTaskNumberSelect__input:focus,
+.createTaskNumberSelect__input:focus {
+  outline: none;
+  box-shadow: none;
+  border-color: transparent;
+}
+
+.createTaskNumberSelect__trigger {
+  flex-shrink: 0;
+  width: 44px;
+  border: none;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 0 14px 14px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  opacity: 0.85;
+  padding: 0;
+}
+
+.createTaskNumberSelect__trigger:hover {
+  opacity: 1;
+  background: var(--surface2);
+}
+
+.createTaskNumberSelect__dropdown {
+  min-width: 100%;
+  box-sizing: border-box;
+  max-height: 200px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.createTaskNumberSelect__dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+.createTaskNumberSelect__dropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+.createTaskNumberSelect__dropdown::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+.createTaskNumberSelect__dropdown::-webkit-scrollbar-thumb:hover {
+  background: var(--border3);
+}
+
 .deliverablesBox {
   padding: 10px 12px;
   border-radius: 14px;
@@ -261,9 +360,16 @@
 .referenceActionsRow {
   display: flex;
   gap: 10px;
-  align-items: center;
-  margin-top: 10px;
+}
+
+.referenceActionsRow--withInput {
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.referenceActionsRow--withInput .referenceLinkInput {
+  flex: 1;
+  min-width: 200px;
 }
 
 .field__refBtn--full {

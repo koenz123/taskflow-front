@@ -328,6 +328,7 @@ export function AddWorksModal({ open, ownerId, serverAvailable, migrationError, 
                 <input
                   className="addWorksLinkBlock__input"
                   value={linkTitle}
+                  autoComplete="off"
                   onChange={(e) => setLinkTitle(e.target.value)}
                   disabled={isUploading}
                 />
@@ -358,6 +359,7 @@ export function AddWorksModal({ open, ownerId, serverAvailable, migrationError, 
                 <input
                   className="addWorksLinkBlock__input"
                   value={linkUrl}
+                  autoComplete="off"
                   onChange={(e) => setLinkUrl(e.target.value)}
                   placeholder="https://"
                   disabled={isUploading}
@@ -370,6 +372,7 @@ export function AddWorksModal({ open, ownerId, serverAvailable, migrationError, 
                 <textarea
                   className="addWorksLinkBlock__textarea"
                   value={linkDescription}
+                  autoComplete="off"
                   onChange={(e) => setLinkDescription(e.target.value)}
                   rows={3}
                   disabled={isUploading}
@@ -418,6 +421,7 @@ export function AddWorksModal({ open, ownerId, serverAvailable, migrationError, 
                         value={it.title}
                         onChange={(e) => updateItem(it.id, { title: e.target.value, status: 'idle', error: null })}
                         disabled={isUploading}
+                        autoComplete="off"
                       />
                     </label>
 
@@ -432,6 +436,7 @@ export function AddWorksModal({ open, ownerId, serverAvailable, migrationError, 
                         rows={3}
                         disabled={isUploading}
                         placeholder={t('profile.workNoDescription')}
+                        autoComplete="off"
                       />
                     </label>
 
@@ -444,6 +449,7 @@ export function AddWorksModal({ open, ownerId, serverAvailable, migrationError, 
                           onChange={(e) => updateItem(it.id, { mediaUrl: e.target.value, status: 'idle', error: null })}
                           placeholder="https://"
                           disabled={isUploading}
+                          autoComplete="off"
                         />
                       </label>
                     ) : (

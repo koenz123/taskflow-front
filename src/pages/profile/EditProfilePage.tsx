@@ -201,6 +201,7 @@ export function EditProfilePage() {
             onChange={(e) => setFullName(e.target.value)}
             onBlur={() => setTouched((prev) => ({ ...prev, fullName: true }))}
             className="editProfileInput"
+            autoComplete="off"
           />
           {visibleFieldErrors.fullName ? (
             <div className="editProfileError">{visibleFieldErrors.fullName}</div>
@@ -231,6 +232,7 @@ export function EditProfilePage() {
               inputMode="tel"
               className="editProfilePhoneControl__input"
               placeholder=""
+              autoComplete="off"
             />
           </div>
           {visibleFieldErrors.phoneNational ? (
@@ -246,6 +248,7 @@ export function EditProfilePage() {
             onBlur={() => setTouched((prev) => ({ ...prev, email: true }))}
             inputMode="email"
             className="editProfileInput"
+            autoComplete="off"
           />
           {visibleFieldErrors.email ? (
             <div className="editProfileError">{visibleFieldErrors.email}</div>
@@ -260,6 +263,7 @@ export function EditProfilePage() {
             value={company}
             onChange={(e) => setCompany(e.target.value)}
             className="editProfileInput"
+            autoComplete="off"
           />
         </label>
 

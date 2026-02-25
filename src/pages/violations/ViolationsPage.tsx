@@ -14,8 +14,8 @@ const DISPLAY_MS = 4 * DECAY_MS
 
 function sanctionKeyByIndex(n: number) {
   if (n <= 1) return 'violations.sanction.warning' as const
-  if (n === 2) return 'violations.sanction.ratingPenalty5' as const
-  if (n === 3) return 'violations.sanction.block24h' as const
+  if (n === 2) return 'violations.sanction.block24h' as const
+  if (n === 3) return 'violations.sanction.block48h' as const
   if (n === 4) return 'violations.sanction.block72h' as const
   return 'violations.sanction.ban' as const
 }
@@ -157,7 +157,11 @@ export function ViolationsPage() {
               const pillTone = sanctionToneByIndex(n)
               const created = new Date(v.createdAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')
               const reasonKey =
-                v.type === 'no_submit_24h' ? ('violations.reason.noSubmit24h' as const) : ('violations.reason.noStart12h' as const)
+                v.type === 'no_submit_24h'
+                  ? ('violations.reason.noSubmit24h' as const)
+                  : v.type === 'force_majeure_abuse'
+                    ? ('violations.reason.forceMajeureAbuse' as const)
+                    : ('violations.reason.noStart12h' as const)
 
               return (
                 <li key={v.id} className="violationsCard">
@@ -229,14 +233,15 @@ export function ViolationsPage() {
               <ul>
                 <li>{t('violations.help.violation.noStart12h')}</li>
                 <li>{t('violations.help.violation.noSubmit24h')}</li>
+                <li>{t('violations.help.violation.forceMajeureAbuse')}</li>
               </ul>
               <p>
                 <strong>{t('violations.help.sanctionsTitle')}</strong>
               </p>
               <ul>
                 <li>{t('violations.help.sanctions.warning')}</li>
-                <li>{t('violations.help.sanctions.ratingPenalty')}</li>
                 <li>{t('violations.help.sanctions.block24')}</li>
+                <li>{t('violations.help.sanctions.block48')}</li>
                 <li>{t('violations.help.sanctions.block72')}</li>
                 <li>{t('violations.help.sanctions.ban')}</li>
               </ul>

@@ -67,10 +67,16 @@ function normalizeDecision(value: unknown): DisputeDecision | undefined {
   return undefined
 }
 
-function normalize(raw: unknown): Dispute | null {
+/** Normalize raw API/local dispute; supports id or _id (Mongo). */
+export function normalizeDispute(raw: unknown): Dispute | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as Record<string, unknown>
-  const id = typeof r.id === 'string' ? r.id : createId('disp')
+  const id =
+    typeof r.id === 'string' && r.id.trim()
+      ? r.id.trim()
+      : typeof (r as any)._id === 'string'
+        ? String((r as any)._id)
+        : createId('disp')
   const contractId = typeof r.contractId === 'string' ? r.contractId : ''
   const openedByUserId = typeof r.openedByUserId === 'string' ? r.openedByUserId : ''
   if (!contractId || !openedByUserId) return null
@@ -100,6 +106,10 @@ function normalize(raw: unknown): Dispute | null {
     createdAt,
     updatedAt,
   }
+}
+
+function normalize(raw: unknown): Dispute | null {
+  return normalizeDispute(raw)
 }
 
 function writeUpdatedById(disputeId: string, updater: (prev: Dispute) => Dispute): Dispute | null {

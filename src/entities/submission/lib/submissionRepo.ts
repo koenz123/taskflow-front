@@ -74,7 +74,10 @@ function normalize(raw: unknown): Submission | null {
   if (!raw || typeof raw !== 'object') return null
   const r = raw as Record<string, unknown>
   const id = typeof r.id === 'string' ? r.id : createId('sub')
-  const contractId = typeof r.contractId === 'string' ? r.contractId : ''
+  const rawContractId =
+    (typeof r.contractId === 'string' ? r.contractId : null) ??
+    (typeof (r as Record<string, unknown>).contract_id === 'string' ? (r as Record<string, unknown>).contract_id : null)
+  const contractId: string = typeof rawContractId === 'string' ? rawContractId : ''
   if (!contractId) return null
   const createdAt = typeof r.createdAt === 'string' ? r.createdAt : nowIso()
   const message = typeof r.message === 'string' && r.message.trim() ? r.message.trim() : undefined

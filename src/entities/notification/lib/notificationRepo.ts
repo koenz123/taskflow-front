@@ -172,6 +172,14 @@ export const notificationRepo = {
     ).length
   },
 
+  unreadSupportThreadCountForUser(userId: string): number {
+    const unread = readAll().filter(
+      (n) => n.recipientUserId === userId && n.type === 'support_message' && !n.readAt && n.supportThreadId,
+    )
+    const threadIds = new Set(unread.map((n) => n.supportThreadId!))
+    return threadIds.size
+  },
+
   markReadForDispute(userId: string, disputeId: string) {
     const all = readAll()
     const now = new Date().toISOString()
@@ -563,6 +571,23 @@ export const notificationRepo = {
     return n
   },
 
+  addSupportMessage(input: { recipientUserId: string; actorUserId: string; supportThreadId: string }) {
+    const now = new Date().toISOString()
+    const n: Notification = {
+      id: createId('notif'),
+      type: 'support_message',
+      recipientUserId: input.recipientUserId,
+      actorUserId: input.actorUserId,
+      taskId: '',
+      supportThreadId: input.supportThreadId,
+      createdAt: now,
+    }
+    const all = readAll()
+    all.push(n)
+    writeAll(all)
+    return n
+  },
+
   markAllRead(userId: string) {
     const all = readAll()
     const now = new Date().toISOString()
@@ -591,6 +616,18 @@ export const notificationRepo = {
     const now = new Date().toISOString()
     all[idx] = { ...all[idx], readAt: now }
     writeAll(all)
+  },
+
+  markReadBySupportThread(recipientUserId: string, supportThreadId: string) {
+    const all = readAll()
+    const now = new Date().toISOString()
+    let changed = false
+    const updated = all.map((n) => {
+      if (n.recipientUserId !== recipientUserId || n.supportThreadId !== supportThreadId || n.readAt) return n
+      changed = true
+      return { ...n, readAt: now }
+    })
+    if (changed) writeAll(updated)
   },
 }
 

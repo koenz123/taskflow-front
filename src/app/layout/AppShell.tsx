@@ -5,6 +5,7 @@ import { Sidebar } from '@/widgets/sidebar/Sidebar'
 import { BottomNav } from '@/widgets/bottom-nav/BottomNav'
 import { runTaskAssignmentJobs } from '@/entities/taskAssignment/lib/taskAssignmentJobs'
 import { useAuth } from '@/shared/auth/AuthProvider'
+import { isArbiterAccount, userRepo } from '@/entities/user/lib/userRepo'
 import { paths } from '@/app/router/paths'
 import './app-shell.css'
 
@@ -15,7 +16,12 @@ export function AppShell() {
   useEffect(() => {
     if (auth.status !== 'authenticated') return
     if (auth.user?.role === 'pending') {
-      navigate(paths.chooseRole, { replace: true })
+      if (isArbiterAccount(auth.user)) {
+        userRepo.forceArbiterRole(auth.user.id)
+        navigate(paths.disputes, { replace: true })
+      } else {
+        navigate(paths.chooseRole, { replace: true })
+      }
       return
     }
     const run = () => runTaskAssignmentJobs(Date.now())

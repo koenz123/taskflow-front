@@ -112,6 +112,7 @@ export function ReportProfileModal({ open, ownerRole, ownerName, onClose, onSubm
                   <textarea
                     className="reportModal__detail"
                     placeholder={t('profile.reportDetailPlaceholder')}
+                    autoComplete="off"
                     value={customDetail}
                     onChange={(e) => setCustomDetail(e.target.value)}
                     rows={4}

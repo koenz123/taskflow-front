@@ -1,6 +1,5 @@
 import { executorRestrictionRepo } from './executorRestrictionRepo'
 import { executorViolationRepo } from './executorViolationRepo'
-import { ratingAdjustmentRepo } from '@/entities/ratingAdjustment/lib/ratingAdjustmentRepo'
 
 function addMs(iso: string, msToAdd: number) {
   const base = Date.parse(iso)
@@ -8,10 +7,11 @@ function addMs(iso: string, msToAdd: number) {
   return new Date(safeBase + msToAdd).toISOString()
 }
 
+const HOUR_MS = 60 * 60 * 1000
+
 export type NoSubmitSanction =
   | { kind: 'warning'; n: 1 }
-  | { kind: 'rating_penalty'; n: 2; deltaPercent: -5 }
-  | { kind: 'respond_block'; n: 3 | 4; until: string; durationHours: 24 | 72 }
+  | { kind: 'respond_block'; n: 2 | 3 | 4; until: string; durationHours: 24 | 48 | 72 }
   | { kind: 'ban'; n: number }
 
 export function applyNoSubmit24hSanctions(input: {
@@ -39,18 +39,19 @@ export function applyNoSubmit24hSanctions(input: {
   }
 
   if (n === 2) {
-    ratingAdjustmentRepo.addNoSubmitPenalty5(violation.id, input.executorId)
-    return { violationId: violation.id, sanction: { kind: 'rating_penalty', n: 2, deltaPercent: -5 } }
+    const until = addMs(new Date().toISOString(), 24 * HOUR_MS)
+    executorRestrictionRepo.setRespondBlockedUntil(input.executorId, until)
+    return { violationId: violation.id, sanction: { kind: 'respond_block', n: 2, until, durationHours: 24 } }
   }
 
   if (n === 3) {
-    const until = addMs(new Date().toISOString(), 24 * 60 * 60 * 1000)
+    const until = addMs(new Date().toISOString(), 48 * HOUR_MS)
     executorRestrictionRepo.setRespondBlockedUntil(input.executorId, until)
-    return { violationId: violation.id, sanction: { kind: 'respond_block', n: 3, until, durationHours: 24 } }
+    return { violationId: violation.id, sanction: { kind: 'respond_block', n: 3, until, durationHours: 48 } }
   }
 
   if (n === 4) {
-    const until = addMs(new Date().toISOString(), 72 * 60 * 60 * 1000)
+    const until = addMs(new Date().toISOString(), 72 * HOUR_MS)
     executorRestrictionRepo.setRespondBlockedUntil(input.executorId, until)
     return { violationId: violation.id, sanction: { kind: 'respond_block', n: 4, until, durationHours: 72 } }
   }

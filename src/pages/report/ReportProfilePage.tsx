@@ -118,9 +118,10 @@ export function ReportProfilePage() {
             />
 
             {isOther ? (
-              <textarea
-                className="reportPage__detail"
-                placeholder={t('profile.reportDetailPlaceholder')}
+<textarea
+              className="reportPage__detail"
+              placeholder={t('profile.reportDetailPlaceholder')}
+              autoComplete="off"
                 value={customDetail}
                 onChange={(e) => setCustomDetail(e.target.value)}
                 rows={4}

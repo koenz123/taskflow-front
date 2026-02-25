@@ -21,15 +21,22 @@ type FormState = {
   executorMode: 'blogger_ad' | 'customer_post' | 'ai'
   title: string
   description: string
-  referenceUrl: string
+  /** Temporary input for adding a reference link (not stored in items until user confirms). */
+  referenceUrlInput: string
   formatRequirements: string
   platforms: string[]
   platformVideoCounts: Record<string, string>
   formats: string[]
   budgetAmount: string
   budgetCurrency: 'USD' | 'RUB'
+  executionDays: string
   maxExecutors: string
 }
+
+/** One reference item: link or video (local blob or server URL). */
+export type ReferenceItem =
+  | { id: string; kind: 'url'; url: string }
+  | { id: string; kind: 'video'; blobId?: string; url?: string; name: string; mimeType?: string }
 
 type FormErrors = Partial<Record<keyof FormState, string>>
 
@@ -42,18 +49,12 @@ const MAX_REFERENCE_VIDEOS = 3
 const MAX_DESCRIPTION_FILES = 3
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
-type ReferenceVideoItem = {
-  blobId: string
-  name: string
-  mimeType?: string
-}
-
 type PersistedCreateTaskDraftV1 = {
   v: 1
   savedAt: number
   form: FormState
   descriptionFiles: NonNullable<Task['descriptionFiles']>
-  referenceVideos: ReferenceVideoItem[]
+  referenceItems: ReferenceItem[]
   currencyTouched: boolean
 }
 
@@ -108,9 +109,37 @@ function splitList(value: string | undefined | null) {
     .filter(Boolean)
 }
 
+function draftReferenceToItems(ref: Task['reference'] | undefined): ReferenceItem[] {
+  if (!ref) return []
+  if (ref.kind === 'url') {
+    return [{ id: createId('ref'), kind: 'url', url: ref.url }]
+  }
+  if (ref.kind === 'video') {
+    return [{ id: createId('ref'), kind: 'video', blobId: ref.blobId, url: ref.url, name: ref.name, mimeType: ref.mimeType }]
+  }
+  if (ref.kind === 'videos') {
+    return (ref.videos ?? []).slice(0, MAX_REFERENCE_VIDEOS).map((v) => ({
+      id: createId('ref'),
+      kind: 'video' as const,
+      blobId: v.blobId,
+      url: v.url,
+      name: v.name,
+      mimeType: v.mimeType,
+    }))
+  }
+  if (ref.kind === 'items') {
+    return ref.items.slice(0, MAX_REFERENCE_VIDEOS).map((i) =>
+      i.kind === 'url'
+        ? { id: createId('ref'), kind: 'url' as const, url: i.url }
+        : { id: createId('ref'), kind: 'video' as const, blobId: i.blobId, url: i.url, name: i.name, mimeType: i.mimeType },
+    )
+  }
+  return []
+}
+
 function validate(
   form: FormState,
-  referenceVideos: ReferenceVideoItem[],
+  referenceItems: ReferenceItem[],
   locale: 'en' | 'ru',
   t: (key: TranslationKey, params?: Record<string, string | number>) => string,
 ): FormErrors {
@@ -119,7 +148,6 @@ function validate(
   const title = form.title.trim()
   const desc = form.description.trim()
   const formatReq = form.formatRequirements.trim()
-  const referenceUrl = form.referenceUrl.trim()
 
   if (!title) errors.title = t('validation.taskTitleRequired')
   else {
@@ -129,27 +157,29 @@ function validate(
   if (!desc) errors.description = t('validation.taskFullRequired')
   else if (desc.length > DESCRIPTION_MAX_CHARS) errors.description = t('validation.taskFullLength')
 
-  if (!referenceVideos.length && !referenceUrl) {
-    errors.referenceUrl =
+  if (referenceItems.length === 0) {
+    errors.referenceUrlInput =
       locale === 'ru'
-        ? 'Референс обязателен: вставьте ссылку или прикрепите видео.'
-        : 'Reference is required: paste a link or attach a video.'
-  } else if (!referenceVideos.length && referenceUrl) {
-    const ok = (() => {
-      if (!/^https?:\/\//i.test(referenceUrl)) return false
-      try {
-        // eslint-disable-next-line no-new
-        new URL(referenceUrl)
-        return true
-      } catch {
-        return false
+        ? 'Референс обязателен: добавьте до 3 ссылок и/или видео.'
+        : 'Reference is required: add up to 3 links and/or videos.'
+  } else {
+    for (const item of referenceItems) {
+      if (item.kind === 'url') {
+        if (!/^https?:\/\//i.test(item.url)) {
+          errors.referenceUrlInput =
+            locale === 'ru'
+              ? 'Ссылка должна начинаться с http:// или https://.'
+              : 'Link must start with http:// or https://.'
+          break
+        }
+        try {
+          new URL(item.url)
+        } catch {
+          errors.referenceUrlInput =
+            locale === 'ru' ? 'Некорректная ссылка.' : 'Invalid URL.'
+          break
+        }
       }
-    })()
-    if (!ok) {
-      errors.referenceUrl =
-        locale === 'ru'
-          ? 'Ссылка должна начинаться с http:// или https://.'
-          : 'Link must start with http:// or https://.'
     }
   }
 
@@ -195,6 +225,14 @@ function validate(
     else if (!Number.isFinite(maxNum) || !Number.isInteger(maxNum) || maxNum < 1 || maxNum > 10) {
       errors.maxExecutors = t('validation.maxExecutorsRange')
     }
+
+    const days = form.executionDays.trim()
+    if (days) {
+      const daysNum = Number(days)
+      if (!Number.isFinite(daysNum) || !Number.isInteger(daysNum) || daysNum < 1 || daysNum > 7) {
+        errors.executionDays = t('validation.executionDaysRange')
+      }
+    }
   }
 
   return errors
@@ -234,13 +272,14 @@ export function CreateTaskPage() {
         executorMode: 'customer_post',
         title: '',
         description: '',
-        referenceUrl: '',
+        referenceUrlInput: '',
         formatRequirements: '',
         platforms: [],
         platformVideoCounts: {},
         formats: [],
         budgetAmount: '',
         budgetCurrency: (locale === 'ru' ? 'RUB' : 'USD') as 'RUB' | 'USD',
+        executionDays: '1',
         maxExecutors: '',
       }
     }
@@ -254,18 +293,19 @@ export function CreateTaskPage() {
       executorMode: draft.executorMode === 'blogger_ad' || draft.executorMode === 'ai' ? draft.executorMode : 'customer_post',
       title: localized(draft.title),
       description: localized(draft.description),
-      referenceUrl: draft.reference?.kind === 'url' ? draft.reference.url : '',
+      referenceUrlInput: '',
       formatRequirements: draft.requirements ? localized(draft.requirements) : '',
       platforms: splitList(draft.category ?? ''),
       platformVideoCounts: countsFromDraft,
       formats: splitList(draft.location ?? ''),
       budgetAmount: draft.budgetAmount ? String(draft.budgetAmount) : '',
       budgetCurrency: (draft.budgetCurrency === 'RUB' ? 'RUB' : 'USD') as 'USD' | 'RUB',
+      executionDays: draft.executionDays ? String(Math.min(7, Math.max(1, Math.floor(Number(draft.executionDays)) || 1))) : '1',
       maxExecutors: draft.maxExecutors ? String(draft.maxExecutors) : '',
     }
   }, [draft, locale])
 
-  const [form, setForm] = useState<FormState>(() => mapDraft)
+  const [form, setForm] = useState<FormState>(() => ({ ...mapDraft, referenceUrlInput: '' }))
   const [touched, setTouched] = useState<Partial<Record<keyof FormState, boolean>>>({})
   const [submitted, setSubmitted] = useState(false)
   const [currencyTouched, setCurrencyTouched] = useState(false)
@@ -278,13 +318,10 @@ export function CreateTaskPage() {
   const [fileBusy, setFileBusy] = useState(false)
   const [descriptionLimitOpen, setDescriptionLimitOpen] = useState(false)
   const [openHelpId, setOpenHelpId] = useState<string | null>(null)
-  const [referenceVideos, setReferenceVideos] = useState<ReferenceVideoItem[]>(() => {
-    const ref = draft?.reference
-    if (!ref) return []
-    if (ref.kind === 'video') return [{ blobId: ref.blobId, name: ref.name, mimeType: ref.mimeType }]
-    if (ref.kind === 'videos') return (ref.videos ?? []).slice(0, MAX_REFERENCE_VIDEOS)
-    return []
-  })
+  const [openExecutionDaysDropdown, setOpenExecutionDaysDropdown] = useState(false)
+  const [openMaxExecutorsDropdown, setOpenMaxExecutorsDropdown] = useState(false)
+  const [referenceItems, setReferenceItems] = useState<ReferenceItem[]>(() => draftReferenceToItems(draft?.reference))
+  const [referenceAddLinkError, setReferenceAddLinkError] = useState<string | null>(null)
   const referenceFileInputRef = useRef<HTMLInputElement | null>(null)
   const [referenceBusy, setReferenceBusy] = useState(false)
   const [referenceLimitOpen, setReferenceLimitOpen] = useState(false)
@@ -313,20 +350,7 @@ export function CreateTaskPage() {
   }, [draft?.id])
 
   useEffect(() => {
-    const ref = draft?.reference
-    if (!ref) {
-      setReferenceVideos([])
-      return
-    }
-    if (ref.kind === 'video') {
-      setReferenceVideos([{ blobId: ref.blobId, name: ref.name, mimeType: ref.mimeType }])
-      return
-    }
-    if (ref.kind === 'videos') {
-      setReferenceVideos((ref.videos ?? []).slice(0, MAX_REFERENCE_VIDEOS))
-      return
-    }
-    setReferenceVideos([])
+    setReferenceItems(draftReferenceToItems(draft?.reference))
   }, [draft?.id])
 
   useEffect(() => {
@@ -340,7 +364,7 @@ export function CreateTaskPage() {
     })()
     if (saved?.form) setForm(saved.form)
     if (Array.isArray(saved?.descriptionFiles)) setDescriptionFiles(saved.descriptionFiles)
-    if (Array.isArray(saved?.referenceVideos)) setReferenceVideos(saved.referenceVideos)
+    if (Array.isArray(saved?.referenceItems)) setReferenceItems(saved.referenceItems)
     if (typeof saved?.currencyTouched === 'boolean') setCurrencyTouched(saved.currencyTouched)
     setDraftHydrated(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -353,7 +377,7 @@ export function CreateTaskPage() {
       savedAt: Date.now(),
       form,
       descriptionFiles,
-      referenceVideos,
+      referenceItems,
       currencyTouched,
     }
     const id = window.setTimeout(() => {
@@ -362,22 +386,22 @@ export function CreateTaskPage() {
       } catch {}
     }, 250)
     return () => window.clearTimeout(id)
-  }, [draftHydrated, form, descriptionFiles, referenceVideos, currencyTouched, storageKey])
+  }, [draftHydrated, form, descriptionFiles, referenceItems, currencyTouched, storageKey])
 
   const hasUnsavedInput = useMemo(() => {
     if (form.title.trim()) return true
     if (form.description.trim()) return true
-    if (form.referenceUrl.trim()) return true
-    if (referenceVideos.length) return true
+    if (referenceItems.length) return true
     if (descriptionFiles.length) return true
     if (form.formatRequirements.trim()) return true
     if (form.platforms.length) return true
     if (Object.keys(form.platformVideoCounts ?? {}).some((k) => (form.platformVideoCounts[k] ?? '').trim())) return true
     if (form.formats.length) return true
     if (form.budgetAmount.trim()) return true
+    if (form.executionDays.trim()) return true
     if (form.maxExecutors.trim()) return true
     return false
-  }, [descriptionFiles.length, form, referenceVideos.length])
+  }, [descriptionFiles.length, form, referenceItems.length])
 
   useEffect(() => {
     if (!confirmCancelOpen) return
@@ -387,6 +411,17 @@ export function CreateTaskPage() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [confirmCancelOpen])
+
+  useEffect(() => {
+    if (!openExecutionDaysDropdown && !openMaxExecutorsDropdown) return
+    const onMouseDown = (e: MouseEvent) => {
+      if ((e.target as Element).closest('.createTaskNumberSelectWrap')) return
+      setOpenExecutionDaysDropdown(false)
+      setOpenMaxExecutorsDropdown(false)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [openExecutionDaysDropdown, openMaxExecutorsDropdown])
 
   useEffect(() => {
     if (currencyTouched) return
@@ -411,7 +446,7 @@ export function CreateTaskPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [descriptionLimitOpen])
 
-  const errors = useMemo(() => validate(form, referenceVideos, locale, t), [form, referenceVideos, locale, t])
+  const errors = useMemo(() => validate(form, referenceItems, locale, t), [form, referenceItems, locale, t])
   const isValid = Object.keys(errors).length === 0
 
   const visibleErrors = submitted
@@ -456,6 +491,11 @@ export function CreateTaskPage() {
         return { platform: p, quantity }
       })
       .filter((d) => d.platform.trim().length > 0)
+    const executionDaysValue = Math.min(7, Math.max(1, Math.floor(Number(form.executionDays)) || 1))
+    const dueDateD = new Date()
+    dueDateD.setDate(dueDateD.getDate() + executionDaysValue)
+    const dueDate = dueDateD.toISOString().slice(0, 10)
+
     const nextData = {
       executorMode: form.executorMode,
       deliverables: deliverables.length ? deliverables : undefined,
@@ -468,10 +508,22 @@ export function CreateTaskPage() {
       descriptionFiles: descriptionFiles.length ? descriptionFiles.map((f) => ({ ...f })) : undefined,
       // Backward compatibility (legacy single file).
       descriptionFile: descriptionFiles.length ? { ...descriptionFiles[0] } : undefined,
-      reference: referenceVideos.length
-        ? ({ kind: 'videos' as const, videos: referenceVideos.slice(0, MAX_REFERENCE_VIDEOS) } as Task['reference'])
-        : form.referenceUrl.trim()
-          ? ({ kind: 'url' as const, url: form.referenceUrl.trim() } as Task['reference'])
+      reference:
+        referenceItems.length > 0
+          ? ({
+              kind: 'items' as const,
+              items: referenceItems.slice(0, MAX_REFERENCE_VIDEOS).map((it) =>
+                it.kind === 'url'
+                  ? { kind: 'url' as const, url: it.url }
+                  : {
+                      kind: 'video' as const,
+                      ...(it.blobId ? { blobId: it.blobId } : {}),
+                      ...(it.url ? { url: it.url } : {}),
+                      name: it.name,
+                      mimeType: it.mimeType,
+                    },
+              ),
+            } as Task['reference'])
           : undefined,
       category: form.platforms.length ? form.platforms.join(', ') : undefined,
       location: form.formats.length ? form.formats.join(', ') : undefined,
@@ -479,6 +531,8 @@ export function CreateTaskPage() {
       budgetCurrency: isAi ? undefined : form.budgetCurrency,
       expiresAt,
       maxExecutors: maxExecutorsValue,
+      executionDays: executionDaysValue,
+      dueDate,
     }
 
     let task: Task
@@ -825,6 +879,7 @@ export function CreateTaskPage() {
               <textarea
                 className="field__textarea"
                 value={form.description}
+                autoComplete="off"
                 onChange={(e) => setField('description', e.target.value)}
                 onBlur={() => setTouched((t) => ({ ...t, description: true }))}
                 placeholder={locale === 'ru' ? 'Опишите задачу для исполнителя…' : 'Describe the task for the contractor…'}
@@ -912,8 +967,8 @@ export function CreateTaskPage() {
                         'Референс — пример, на который должен ориентироваться исполнитель.',
                         '',
                         'Можно указать:',
-                        '- Ссылку на видео (YouTube, TikTok, Reels и т.д.).',
-                        `- Или прикрепить видео‑файлы (до ${MAX_REFERENCE_VIDEOS} шт.).`,
+                        `- До ${MAX_REFERENCE_VIDEOS} ссылок на видео (YouTube, TikTok, Reels и т.д.).`,
+                        `- Или загрузить до ${MAX_REFERENCE_VIDEOS} видео‑файлов (можно комбинировать ссылки и файлы).`,
                         '',
                         'Что хороший референс должен показывать:',
                         '- Стиль монтажа и темп.',
@@ -927,8 +982,8 @@ export function CreateTaskPage() {
                         'Reference is an example the contractor should follow.',
                         '',
                         'You can provide:',
-                        '- A video link (YouTube, TikTok, Reels, etc.)',
-                        `- Or attach video files (up to ${MAX_REFERENCE_VIDEOS}).`,
+                        `- Up to ${MAX_REFERENCE_VIDEOS} video links (YouTube, TikTok, Reels, etc.)`,
+                        `- Or upload up to ${MAX_REFERENCE_VIDEOS} video files (you can mix links and files).`,
                         '',
                         'A good reference shows:',
                         '- Editing style and pace',
@@ -942,33 +997,80 @@ export function CreateTaskPage() {
               />
             </span>
 
-            <div className="field__controlRow">
+            <div className="referenceActionsRow referenceActionsRow--withInput">
               <input
-                className="field__input"
-                value={form.referenceUrl}
-                disabled={referenceVideos.length > 0}
+                className="field__input referenceLinkInput"
+                value={form.referenceUrlInput}
                 onChange={(e) => {
-                  const next = e.target.value
-                  if (referenceVideos.length) {
-                    const ids = referenceVideos.map((x) => x.blobId)
-                    setReferenceVideos([])
-                    for (const id of ids) void deleteBlob(id).catch(() => {})
-                  }
-                  setField('referenceUrl', next)
+                  setReferenceAddLinkError(null)
+                  setField('referenceUrlInput', e.target.value)
                 }}
-                onBlur={() => setTouched((t) => ({ ...t, referenceUrl: true }))}
-                placeholder={
-                  referenceVideos.length
-                    ? locale === 'ru'
-                      ? 'Видео прикреплены'
-                      : 'Video attached'
-                    : locale === 'ru'
-                      ? 'Вставьте ссылку на референс…'
-                      : 'Paste a reference link…'
-                }
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    const url = form.referenceUrlInput.trim()
+                    if (!url) return
+                    if (referenceItems.length >= MAX_REFERENCE_VIDEOS) {
+                      setReferenceAddLinkError(
+                        locale === 'ru'
+                          ? `Можно добавить не более ${MAX_REFERENCE_VIDEOS} ссылок или видео. Удалите один элемент.`
+                          : `You can add at most ${MAX_REFERENCE_VIDEOS} links or videos. Remove one item.`,
+                      )
+                      return
+                    }
+                    if (!/^https?:\/\//i.test(url)) {
+                      setReferenceAddLinkError(
+                        locale === 'ru' ? 'Ссылка должна начинаться с http:// или https://' : 'Link must start with http:// or https://',
+                      )
+                      return
+                    }
+                    try {
+                      new URL(url)
+                    } catch {
+                      setReferenceAddLinkError(locale === 'ru' ? 'Некорректная ссылка.' : 'Invalid URL.')
+                      return
+                    }
+                    setReferenceItems((prev) => [...prev, { id: createId('ref'), kind: 'url' as const, url }].slice(0, MAX_REFERENCE_VIDEOS))
+                    setField('referenceUrlInput', '')
+                    setReferenceAddLinkError(null)
+                  }
+                }}
+                placeholder={locale === 'ru' ? 'Вставьте ссылку на референс…' : 'Paste a reference link…'}
                 autoComplete="off"
               />
-
+              <button
+                type="button"
+                className="field__refBtn"
+                onClick={() => {
+                  const url = form.referenceUrlInput.trim()
+                  if (!url) return
+                  if (referenceItems.length >= MAX_REFERENCE_VIDEOS) {
+                    setReferenceAddLinkError(
+                      locale === 'ru'
+                        ? `Можно добавить не более ${MAX_REFERENCE_VIDEOS} ссылок или видео. Удалите один элемент.`
+                        : `You can add at most ${MAX_REFERENCE_VIDEOS} links or videos. Remove one item.`,
+                    )
+                    return
+                  }
+                  if (!/^https?:\/\//i.test(url)) {
+                    setReferenceAddLinkError(
+                      locale === 'ru' ? 'Ссылка должна начинаться с http:// или https://' : 'Link must start with http:// or https://',
+                    )
+                    return
+                  }
+                  try {
+                    new URL(url)
+                  } catch {
+                    setReferenceAddLinkError(locale === 'ru' ? 'Некорректная ссылка.' : 'Invalid URL.')
+                    return
+                  }
+                  setReferenceItems((prev) => [...prev, { id: createId('ref'), kind: 'url' as const, url }].slice(0, MAX_REFERENCE_VIDEOS))
+                  setField('referenceUrlInput', '')
+                  setReferenceAddLinkError(null)
+                }}
+              >
+                {locale === 'ru' ? 'Прикрепить ссылку' : 'Attach link'}
+              </button>
               <input
                 ref={referenceFileInputRef}
                 type="file"
@@ -1001,8 +1103,17 @@ export function CreateTaskPage() {
                     void (async () => {
                       try {
                         const uploaded = await uploadFileToServer(file, file.name || 'reference.mp4')
-                        setReferenceVideos([])
-                        setField('referenceUrl', uploaded.url)
+                        setReferenceItems((prev) =>
+                          [
+                            ...prev,
+                            {
+                              id: createId('ref'),
+                              kind: 'video' as const,
+                              url: uploaded.url,
+                              name: file.name || 'video',
+                            },
+                          ].slice(0, MAX_REFERENCE_VIDEOS),
+                        )
                       } catch (e) {
                         const code = e instanceof Error ? e.message : 'upload_failed'
                         const msg =
@@ -1021,7 +1132,7 @@ export function CreateTaskPage() {
                     return
                   }
 
-                  const remaining = Math.max(0, MAX_REFERENCE_VIDEOS - referenceVideos.length)
+                  const remaining = Math.max(0, MAX_REFERENCE_VIDEOS - referenceItems.length)
                   if (remaining <= 0) {
                     alert(locale === 'ru' ? `Можно прикрепить максимум ${MAX_REFERENCE_VIDEOS} видео.` : `You can attach up to ${MAX_REFERENCE_VIDEOS} videos.`)
                     return
@@ -1032,10 +1143,9 @@ export function CreateTaskPage() {
                   setReferenceBusy(true)
                   void (async () => {
                     try {
-                      if (form.referenceUrl.trim()) setField('referenceUrl', '')
-
-                      const added: ReferenceVideoItem[] = []
-                      for (const file of toAdd) {
+                      const file = toAdd[0]
+                      if (!file) return
+                      {
                         const maxBytes = MAX_REFERENCE_VIDEO_MB * 1024 * 1024
                         if (file.size > maxBytes) {
                           alert(
@@ -1043,7 +1153,7 @@ export function CreateTaskPage() {
                               ? `Файл «${file.name}» слишком большой (максимум ${MAX_REFERENCE_VIDEO_MB} МБ).`
                               : `File “${file.name}” is too large (max ${MAX_REFERENCE_VIDEO_MB} MB).`,
                           )
-                          continue
+                          return
                         }
                         if (!file.type.startsWith('video/')) {
                           alert(
@@ -1051,14 +1161,22 @@ export function CreateTaskPage() {
                               ? `Файл «${file.name}» не является видео.`
                               : `File “${file.name}” is not a video.`,
                           )
-                          continue
+                          return
                         }
                         const blobId = createId('blob')
                         await putBlob(blobId, file)
-                        added.push({ blobId, name: file.name, mimeType: file.type })
-                      }
-                      if (added.length) {
-                        setReferenceVideos((prev) => [...prev, ...added].slice(0, MAX_REFERENCE_VIDEOS))
+                        setReferenceItems((prev) =>
+                          [
+                            ...prev,
+                            {
+                              id: createId('ref'),
+                              kind: 'video' as const,
+                              blobId,
+                              name: file.name,
+                              mimeType: file.type,
+                            },
+                          ].slice(0, MAX_REFERENCE_VIDEOS),
+                        )
                       }
                     } finally {
                       setReferenceBusy(false)
@@ -1066,24 +1184,19 @@ export function CreateTaskPage() {
                   })()
                 }}
               />
-            </div>
-
-            <div className="referenceActionsRow">
               <button
                 type="button"
-                className={`field__refBtn field__refBtn--full${
-                  referenceVideos.length >= MAX_REFERENCE_VIDEOS ? ' field__refBtn--inactive' : ''
-                }`}
+                className={`field__refBtn${referenceItems.length >= MAX_REFERENCE_VIDEOS ? ' field__refBtn--inactive' : ''}`}
                 onClick={() => {
                   if (referenceBusy) return
-                  if (referenceVideos.length >= MAX_REFERENCE_VIDEOS) {
+                  if (referenceItems.length >= MAX_REFERENCE_VIDEOS) {
                     setReferenceLimitOpen(true)
                     return
                   }
                   referenceFileInputRef.current?.click()
                 }}
                 disabled={referenceBusy}
-                aria-disabled={referenceVideos.length >= MAX_REFERENCE_VIDEOS}
+                aria-disabled={referenceItems.length >= MAX_REFERENCE_VIDEOS}
               >
                 {referenceBusy
                   ? locale === 'ru'
@@ -1095,19 +1208,33 @@ export function CreateTaskPage() {
               </button>
             </div>
 
-            {referenceVideos.length ? (
+            {referenceAddLinkError ? (
+              <span className="field__error" role="alert">
+                {referenceAddLinkError}
+              </span>
+            ) : null}
+
+            {referenceItems.length > 0 ? (
               <div className="deliverablesBox" style={{ marginTop: 10 }}>
                 <div className="deliverablesList" style={{ maxHeight: 'none' }}>
-                  {referenceVideos.map((v, idx) => (
-                    <div key={v.blobId} className={`deliverablesRow${idx === 0 ? ' deliverablesRow--first' : ''}`}>
-                      <span className="deliverablesRow__platform" title={v.name}>
-                        {v.name}
+                  {referenceItems.map((it, idx) => (
+                    <div key={it.id} className={`deliverablesRow${idx === 0 ? ' deliverablesRow--first' : ''}`}>
+                      <span className="deliverablesRow__platform" title={it.kind === 'url' ? it.url : it.name}>
+                        {it.kind === 'url' ? (it.url.length > 60 ? it.url.slice(0, 57) + '…' : it.url) : it.name}
                       </span>
                       <div className="deliverablesRow__controls">
                         <button
                           type="button"
                           className="deliverablesRow__btn"
-                          aria-label={locale === 'ru' ? `Удалить видео: ${v.name}` : `Remove video: ${v.name}`}
+                          aria-label={
+                            locale === 'ru'
+                              ? it.kind === 'url'
+                                ? 'Удалить ссылку'
+                                : `Удалить видео: ${it.name}`
+                              : it.kind === 'url'
+                                ? 'Remove link'
+                                : `Remove video: ${it.name}`
+                          }
                           onPointerDown={(e) => {
                             e.preventDefault()
                             e.stopPropagation()
@@ -1115,8 +1242,8 @@ export function CreateTaskPage() {
                           onClick={(e) => {
                             e.preventDefault()
                             e.stopPropagation()
-                            setReferenceVideos((prev) => prev.filter((x) => x.blobId !== v.blobId))
-                            void deleteBlob(v.blobId).catch(() => {})
+                            setReferenceItems((prev) => prev.filter((x) => x.id !== it.id))
+                            if (it.kind === 'video' && it.blobId) void deleteBlob(it.blobId).catch(() => {})
                           }}
                         >
                           ×
@@ -1128,7 +1255,7 @@ export function CreateTaskPage() {
               </div>
             ) : null}
 
-            {visibleErrors.referenceUrl ? <span className="field__error">{visibleErrors.referenceUrl}</span> : null}
+            {visibleErrors.referenceUrlInput ? <span className="field__error">{visibleErrors.referenceUrlInput}</span> : null}
           </label>
 
           {referenceLimitOpen ? (
@@ -1142,7 +1269,7 @@ export function CreateTaskPage() {
               <div className="createTaskModal" onPointerDown={(e) => e.stopPropagation()}>
                 <div className="createTaskModal__header">
                   <div className="createTaskModal__title">
-                    {locale === 'ru' ? 'Можно прикрепить максимум 3 видео' : 'You can attach up to 3 videos'}
+                    {locale === 'ru' ? 'Максимум 3 ссылки или видео' : 'Max 3 links or videos'}
                   </div>
                   <button
                     type="button"
@@ -1155,8 +1282,8 @@ export function CreateTaskPage() {
                 </div>
                 <div className="createTaskModal__content">
                   {locale === 'ru'
-                    ? 'Вы уже прикрепили 3 видео к референсу. Чтобы загрузить другое, удалите одно из прикреплённых видео.'
-                    : 'You already attached 3 reference videos. Remove one to upload another.'}
+                    ? 'Можно добавить не более 3 ссылок или видео. Удалите один элемент, чтобы добавить другой.'
+                    : 'You can add at most 3 links or videos. Remove one item to add another.'}
                 </div>
                 <div className="createTaskModal__actions">
                   <button
@@ -1250,6 +1377,7 @@ export function CreateTaskPage() {
               <textarea
                 className="field__textarea"
                 value={form.formatRequirements}
+                autoComplete="off"
                 onChange={(e) => setField('formatRequirements', e.target.value)}
                 onBlur={() => setTouched((t) => ({ ...t, formatRequirements: true }))}
                 placeholder={
@@ -1420,6 +1548,7 @@ export function CreateTaskPage() {
                           <input
                             className="deliverablesRow__input"
                             value={raw}
+                            autoComplete="off"
                             onChange={(e) => {
                               const nextRaw = e.target.value.replace(/[^\d]/g, '').slice(0, 2)
                               setForm((prev) => ({
@@ -1524,6 +1653,7 @@ export function CreateTaskPage() {
                     onBlur={() => setTouched((t) => ({ ...t, budgetAmount: true }))}
                     placeholder={t('task.create.placeholder.amount')}
                     inputMode="decimal"
+                    autoComplete="off"
                   />
                   {visibleErrors.budgetAmount ? <span className="field__error">{visibleErrors.budgetAmount}</span> : null}
                 </label>
@@ -1573,7 +1703,61 @@ export function CreateTaskPage() {
               </div>
 
               <div className="grid2">
-                <label className="field">
+                <label className="field createTaskNumberSelectWrap">
+                  <span className="field__labelRow">
+                    <span className="field__label">{t('task.create.executionDays')}</span>
+                  </span>
+                  <div className="createTaskNumberSelect">
+                    <input
+                      className="field__input createTaskNumberSelect__input"
+                      value={form.executionDays}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/\D/g, '')
+                        const n = raw === '' ? '' : String(Math.min(7, Math.max(1, parseInt(raw, 10) || 1)))
+                        setField('executionDays', n)
+                      }}
+                      onBlur={() => setTouched((t) => ({ ...t, executionDays: true }))}
+                      placeholder={t('task.create.executionDays.placeholder')}
+                      inputMode="numeric"
+                      aria-label={t('task.create.executionDays')}
+                      autoComplete="off"
+                    />
+                    <button
+                      type="button"
+                      className="createTaskNumberSelect__trigger"
+                      onClick={() => setOpenExecutionDaysDropdown((v) => !v)}
+                      aria-haspopup="listbox"
+                      aria-expanded={openExecutionDaysDropdown}
+                      aria-label={locale === 'ru' ? 'Выбрать дни' : 'Choose days'}
+                    >
+                      ▾
+                    </button>
+                    {openExecutionDaysDropdown ? (
+                      <ul
+                        className="customSelectDropdown createTaskNumberSelect__dropdown"
+                        role="listbox"
+                        style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, zIndex: 50 }}
+                      >
+                        {[1, 2, 3, 4, 5, 6, 7].map((d) => (
+                          <li key={d} role="option" aria-selected={form.executionDays === String(d)}>
+                            <button
+                              type="button"
+                              className={`customSelectOption${form.executionDays === String(d) ? ' customSelectOption--selected' : ''}`}
+                              onClick={() => {
+                                setField('executionDays', String(d))
+                                setOpenExecutionDaysDropdown(false)
+                              }}
+                            >
+                              {d} {locale === 'ru' ? (d === 1 ? 'день' : d < 5 ? 'дня' : 'дней') : d === 1 ? 'day' : 'days'}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                  {visibleErrors.executionDays ? <span className="field__error">{visibleErrors.executionDays}</span> : null}
+                </label>
+                <label className="field createTaskNumberSelectWrap">
                   <span className="field__labelRow">
                     <HelpTip
                       triggerLabel={<span className="field__label">{t('task.create.maxExecutors')}</span>}
@@ -1597,16 +1781,54 @@ export function CreateTaskPage() {
                       }
                     />
                   </span>
-                  <input
-                    className="field__input"
-                    value={form.maxExecutors}
-                    onChange={(e) => setField('maxExecutors', e.target.value.replace(/[^\d]/g, '').slice(0, 2))}
-                    onBlur={() => setTouched((t) => ({ ...t, maxExecutors: true }))}
-                    placeholder={t('task.create.maxExecutors.placeholder')}
-                    inputMode="numeric"
-                    min={1}
-                    max={10}
-                  />
+                  <div className="createTaskNumberSelect">
+                    <input
+                      className="field__input createTaskNumberSelect__input"
+                      value={form.maxExecutors}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/\D/g, '')
+                        const n = raw === '' ? '' : String(Math.min(10, Math.max(1, parseInt(raw, 10) || 1)))
+                        setField('maxExecutors', n)
+                      }}
+                      onBlur={() => setTouched((t) => ({ ...t, maxExecutors: true }))}
+                      placeholder={t('task.create.maxExecutors.placeholder')}
+                      inputMode="numeric"
+                      aria-label={t('task.create.maxExecutors')}
+                      autoComplete="off"
+                    />
+                    <button
+                      type="button"
+                      className="createTaskNumberSelect__trigger"
+                      onClick={() => setOpenMaxExecutorsDropdown((v) => !v)}
+                      aria-haspopup="listbox"
+                      aria-expanded={openMaxExecutorsDropdown}
+                      aria-label={locale === 'ru' ? 'Выбрать количество' : 'Choose number'}
+                    >
+                      ▾
+                    </button>
+                    {openMaxExecutorsDropdown ? (
+                      <ul
+                        className="customSelectDropdown createTaskNumberSelect__dropdown"
+                        role="listbox"
+                        style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, zIndex: 50 }}
+                      >
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                          <li key={n} role="option" aria-selected={form.maxExecutors === String(n)}>
+                            <button
+                              type="button"
+                              className={`customSelectOption${form.maxExecutors === String(n) ? ' customSelectOption--selected' : ''}`}
+                              onClick={() => {
+                                setField('maxExecutors', String(n))
+                                setOpenMaxExecutorsDropdown(false)
+                              }}
+                            >
+                              {n}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
                   {visibleErrors.maxExecutors ? <span className="field__error">{visibleErrors.maxExecutors}</span> : null}
                 </label>
               </div>
@@ -1673,7 +1895,9 @@ export function CreateTaskPage() {
                 onClick={() => {
                   clearSavedDraft()
                   if (!USE_API) {
-                    for (const v of referenceVideos) void deleteBlob(v.blobId).catch(() => {})
+                    for (const it of referenceItems) {
+                      if (it.kind === 'video' && it.blobId) void deleteBlob(it.blobId).catch(() => {})
+                    }
                   }
                   setConfirmCancelOpen(false)
                   navigate(paths.tasks)

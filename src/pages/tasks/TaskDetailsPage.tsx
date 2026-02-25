@@ -32,6 +32,7 @@ import { refreshAssignments, useTaskAssignments } from '@/entities/taskAssignmen
 import { refreshNotifications } from '@/entities/notification/lib/useNotifications'
 import { taskAssignmentRepo } from '@/entities/taskAssignment/lib/taskAssignmentRepo'
 import { executorRestrictionRepo } from '@/entities/executorSanction/lib/executorRestrictionRepo'
+import { checkAndApplyForceMajeureSanctions } from '@/entities/executorSanction/lib/forceMajeureSanctions'
 import { noStartViolationCountLast90d } from '@/entities/executorSanction/lib/noStartSanctions'
 import { disputeRepo } from '@/entities/dispute/lib/disputeRepo'
 import { refreshDisputes, useDisputes } from '@/entities/dispute/lib/useDisputes'
@@ -55,7 +56,7 @@ import { uploadFileToServer } from '@/shared/api/uploads'
 import type { SubmissionFile } from '@/entities/submission/model/submission'
 import type { Submission } from '@/entities/submission/model/submission'
 import { userIdMatches } from '@/shared/auth/userIdAliases'
-import { Icon } from '@/shared/ui/icon/Icon'
+import { assignedExecutorsIconName, Icon } from '@/shared/ui/icon/Icon'
 import { taskEscrowAmountInRub } from '@/shared/lib/usdRubRate'
 
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
@@ -245,8 +246,23 @@ export function TaskDetailsPage() {
   const referenceVideos = useMemo(() => {
     const ref = task?.reference
     if (!ref) return []
-    if (ref.kind === 'video') return [{ blobId: ref.blobId, name: ref.name, mimeType: ref.mimeType }]
-    if (ref.kind === 'videos') return (ref.videos ?? []).map((v) => ({ blobId: v.blobId, name: v.name, mimeType: v.mimeType }))
+    if (ref.kind === 'video')
+      return [{ blobId: ref.blobId, url: ref.url, name: ref.name, mimeType: ref.mimeType }]
+    if (ref.kind === 'videos')
+      return (ref.videos ?? []).map((v) => ({ blobId: v.blobId, url: v.url, name: v.name, mimeType: v.mimeType }))
+    if (ref.kind === 'items')
+      return ref.items
+        .filter((i): i is typeof i & { kind: 'video' } => i.kind === 'video')
+        .map((v) => ({ blobId: v.blobId, url: v.url, name: v.name, mimeType: v.mimeType }))
+    return []
+  }, [task?.reference])
+
+  const referenceUrls = useMemo(() => {
+    const ref = task?.reference
+    if (!ref) return [] as string[]
+    if (ref.kind === 'url') return [ref.url]
+    if (ref.kind === 'items')
+      return ref.items.filter((i): i is typeof i & { kind: 'url' } => i.kind === 'url').map((i) => i.url)
     return []
   }, [task?.reference])
   const referenceBlobId = referencePreviewTarget?.blobId ?? null
@@ -363,11 +379,6 @@ export function TaskDetailsPage() {
   async function acceptPauseApi(assignmentId: string) {
     const id = encodeURIComponent(assignmentId)
     await postWithFallback([`/assignments/${id}/accept-pause`, `/assignments/${id}/pause/accept`, `/assignments/${id}/accept_pause`], {})
-  }
-
-  async function rejectPauseApi(assignmentId: string) {
-    const id = encodeURIComponent(assignmentId)
-    await postWithFallback([`/assignments/${id}/reject-pause`, `/assignments/${id}/pause/reject`, `/assignments/${id}/reject_pause`], {})
   }
 
   async function endPauseEarlyApi(assignmentId: string) {
@@ -492,8 +503,15 @@ export function TaskDetailsPage() {
     setDeleteConfirmOpen(true)
   }
 
+  // Reset completion form only when navigating to another task (taskId change), not on every task ref refresh from polling.
+  const lastResetTaskIdRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!taskId || !task) return
+    if (!taskId || !task || task.id !== taskId) return
+    if (lastResetTaskIdRef.current !== taskId) {
+      lastResetTaskIdRef.current = null
+    }
+    if (lastResetTaskIdRef.current === taskId) return
+    lastResetTaskIdRef.current = taskId
     setOptimisticSubmittedForReview(false)
     setCompletionLinks(
       requiresCompletionLinks
@@ -1085,7 +1103,7 @@ export function TaskDetailsPage() {
           .filter((x) => x.status === 'pending' && x.id !== app.id)
         for (const p of pending) {
           applicationRepo.reject(p.id)
-          notificationRepo.addTaskAssignedElse({
+          notificationRepo.addTaskApplicationCancelled({
             recipientUserId: p.executorUserId,
             actorUserId: auth.user.id,
             taskId: finalTask.id,
@@ -1488,7 +1506,10 @@ export function TaskDetailsPage() {
                 <span className="taskDetailsMeta__value">{timeAgo(task.createdAt, locale, nowMs)}</span>
               </div>
               <div className="taskDetailsMeta__section">
-                <span className="taskDetailsMeta__label">{t('task.meta.assigned')}</span>
+                <span className="taskDetailsMeta__label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Icon name={assignedExecutorsIconName(assignedCount)} size={14} />
+                  {t('task.meta.assigned')}
+                </span>
                 <span className="taskDetailsMeta__value">
                   {assignedCount}/{maxExecutors}
                 </span>
@@ -1730,13 +1751,16 @@ export function TaskDetailsPage() {
                   return
                 }
 
-                taskAssignmentRepo.requestPause({
+                const updatedAssignment = taskAssignmentRepo.requestPause({
                   taskId: id,
                   executorId: user.id,
                   reasonId,
                   comment,
                   durationMs: Math.round(durationHours * 60 * 60 * 1000),
                 })
+                if (updatedAssignment && reasonId === 'force_majeure') {
+                  checkAndApplyForceMajeureSanctions(user.id, id, updatedAssignment.id)
+                }
                 notificationRepo.addTaskPauseRequested({
                   recipientUserId: task.createdByUserId,
                   actorUserId: user.id,
@@ -1772,52 +1796,66 @@ export function TaskDetailsPage() {
             {task.reference ? (
               <div className="taskDetailsBody">
                 <h2 className="taskDetailsSection__title">{locale === 'ru' ? 'Референс' : 'Reference'}</h2>
-                {task.reference.kind === 'url' ? (
-                  <a className="linkBtn" href={task.reference.url} target="_blank" rel="noreferrer">
-                    {locale === 'ru' ? 'Открыть ссылку' : 'Open link'}
-                  </a>
-                ) : null}
+                {referenceUrls.length
+                  ? referenceUrls.map((url) => (
+                      <a key={url} className="linkBtn" href={url} target="_blank" rel="noreferrer" style={{ display: 'block', marginTop: 8 }}>
+                        {url.length > 50 ? url.slice(0, 47) + '…' : url}
+                      </a>
+                    ))
+                  : null}
 
                 {referenceVideos.length
-                  ? referenceVideos.map((ref) => {
+                  ? referenceVideos.map((ref, idx) => {
+                      const hasBlob = Boolean(ref.blobId)
+                      const hasUrl = Boolean(ref.url)
                       const isThisSelected = referencePreviewTarget?.blobId === ref.blobId
                       const canPreview = Boolean(referenceVideoUrl) && isThisSelected
+                      const key = ref.blobId ?? ref.url ?? `video-${idx}`
                       return (
-                        <div key={ref.blobId} className="referenceVideoCompact" style={{ marginTop: 10 }}>
+                        <div key={key} className="referenceVideoCompact" style={{ marginTop: 10 }}>
                           <div className="referenceVideoCompact__meta">
                             <div className="referenceVideoCompact__kicker">
-                              {locale === 'ru' ? 'Видео‑файл' : 'Video file'}
+                              {locale === 'ru' ? 'Видео' : 'Video'}
                             </div>
                             <div className="referenceVideoCompact__name" title={ref.name}>
                               {ref.name}
                             </div>
                           </div>
                           <div className="referenceVideoCompact__actions">
-                            <button
-                              type="button"
-                              className="linkBtn"
-                              onClick={() => {
-                                setReferencePreviewTarget({ blobId: ref.blobId, name: ref.name })
-                                setReferencePreviewOpen(true)
-                              }}
-                            >
-                              {locale === 'ru' ? 'Смотреть' : 'Preview'}
-                            </button>
-                            <button
-                              type="button"
-                              className="linkBtn"
-                              onClick={() => {
-                                void (async () => {
-                                  const blob = await getBlob(ref.blobId)
-                                  if (!blob) return
-                                  downloadBlob(ref.name, blob)
-                                })()
-                              }}
-                            >
-                              {locale === 'ru' ? 'Скачать' : 'Download'}
-                            </button>
+                            {hasUrl ? (
+                              <a className="linkBtn" href={ref.url} target="_blank" rel="noreferrer">
+                                {locale === 'ru' ? 'Открыть видео' : 'Open video'}
+                              </a>
+                            ) : null}
+                            {hasBlob ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="linkBtn"
+                                  onClick={() => {
+                                    setReferencePreviewTarget({ blobId: ref.blobId!, name: ref.name })
+                                    setReferencePreviewOpen(true)
+                                  }}
+                                >
+                                  {locale === 'ru' ? 'Смотреть' : 'Preview'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="linkBtn"
+                                  onClick={() => {
+                                    void (async () => {
+                                      const blob = ref.blobId ? await getBlob(ref.blobId) : null
+                                      if (!blob) return
+                                      downloadBlob(ref.name, blob)
+                                    })()
+                                  }}
+                                >
+                                  {locale === 'ru' ? 'Скачать' : 'Download'}
+                                </button>
+                              </>
+                            ) : null}
                           </div>
-                          {referencePreviewTarget?.blobId === ref.blobId && !canPreview ? (
+                          {hasBlob && referencePreviewTarget?.blobId === ref.blobId && !canPreview ? (
                             <div className="referenceVideoCompact__hint">
                               {locale === 'ru'
                                 ? 'Видео недоступно для просмотра (не найдено в хранилище браузера). Можно скачать, если файл ещё есть.'
@@ -1911,6 +1949,7 @@ export function TaskDetailsPage() {
                     <textarea
                       className="taskDetailsField__textarea"
                       value={submissionMessage}
+                      autoComplete="off"
                       onChange={(e) => setSubmissionMessage(e.target.value)}
                       placeholder={locale === 'ru' ? 'Коротко: что сделано, где смотреть, что учесть…' : 'What you delivered, where to check it, notes…'}
                       rows={3}
@@ -1926,13 +1965,13 @@ export function TaskDetailsPage() {
                           <input
                             className="taskDetailsField__input"
                             value={item.url}
+                            autoComplete="off"
                             onChange={(e) => {
                               const value = e.target.value
                               setCompletionLinks((prev) => prev.map((x, i) => (i === idx ? { ...x, url: value } : x)))
                               setCompletionError(null)
                             }}
                             placeholder="https://"
-                            autoComplete="off"
                           />
                         </label>
                       ))
@@ -2262,55 +2301,6 @@ export function TaskDetailsPage() {
                               </button>
                               <button
                                 type="button"
-                                className="taskDetailsApplication__actionButton"
-                                disabled={isPauseDecisionBusy(a.id) || isPauseDecisionDone(a.id) || a.status !== 'pause_requested'}
-                                onClick={() => {
-                                  if (isPauseDecisionBusy(a.id) || isPauseDecisionDone(a.id) || a.status !== 'pause_requested') return
-                                  // Prevent repeated decisions even if backend is idempotent or refresh lags.
-                                  markPauseDecisionDone(a.id, true)
-                                  markPauseDecisionBusy(a.id, true)
-                                  if (USE_API) {
-                                    void (async () => {
-                                      try {
-                                        await rejectPauseApi(a.id)
-                                        await Promise.all([refreshAssignments(), refreshNotifications(), refreshTasks()])
-                                        void notifyToTelegramAndUi({
-                                          toast: toastUi,
-                                          telegramUserId,
-                                          email: userEmail,
-                                          text: t('toast.pauseRejected'),
-                                          tone: 'info',
-                                        })
-                                      } catch (e) {
-                                        // Rollback so user can retry.
-                                        markPauseDecisionDone(a.id, false)
-                                        const msg =
-                                          e instanceof ApiError
-                                            ? `${e.status ?? 'ERR'} ${String(e.message)}`
-                                            : locale === 'ru'
-                                              ? 'Не удалось отклонить паузу.'
-                                              : 'Failed to reject pause.'
-                                        void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: msg, tone: 'error' })
-                                      } finally {
-                                        markPauseDecisionBusy(a.id, false)
-                                      }
-                                    })()
-                                    return
-                                  }
-                                  taskAssignmentRepo.rejectPause(task.id, a.executorId)
-                                  notificationRepo.addTaskPauseRejected({
-                                    recipientUserId: a.executorId,
-                                    actorUserId: user.id,
-                                    taskId: task.id,
-                                  })
-                                  void notifyToTelegramAndUi({ toast: toastUi, telegramUserId, email: userEmail, text: t('toast.pauseRejected'), tone: 'info' })
-                                  markPauseDecisionBusy(a.id, false)
-                                }}
-                              >
-                                {locale === 'ru' ? 'Отклонить' : 'Reject'}
-                              </button>
-                              <button
-                                type="button"
                                 className="taskDetailsApplication__actionButton taskDetailsApplication__actionButton--danger"
                                 onClick={() => {
                                   const msg =
@@ -2357,6 +2347,11 @@ export function TaskDetailsPage() {
                                   const app = applicationRepo.listForTask(task.id).find((x) => x.executorUserId === a.executorId)
                                   if (app && app.status !== 'rejected') applicationRepo.reject(app.id)
                                   taskRepo.removeExecutor(task.id, a.executorId)
+                                  notificationRepo.addTaskApplicationCancelled({
+                                    recipientUserId: a.executorId,
+                                    actorUserId: user.id,
+                                    taskId: task.id,
+                                  })
                                 }}
                               >
                                 {locale === 'ru' ? 'Сменить исполнителя' : 'Switch executor'}
@@ -2420,6 +2415,7 @@ export function TaskDetailsPage() {
                   onChange={(e) => setApplicationMessage(e.target.value)}
                   placeholder={t('task.application.placeholder')}
                   rows={4}
+                  autoComplete="off"
                 />
                 <button
                   type="button"

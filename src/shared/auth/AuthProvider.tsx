@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { SocialPlatform, User, UserRole } from '@/entities/user/model/user'
-import { userRepo } from '@/entities/user/lib/userRepo'
+import { isArbiterAccount, userRepo } from '@/entities/user/lib/userRepo'
 import { sessionRepo } from './sessionRepo'
 import { AuthContext } from './AuthContext'
 import { isEmailVerified, registerPendingSignup } from './emailVerificationApi'
@@ -55,6 +55,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user?.id])
 
   useEffect(() => {
+    const onUsersChange = () => {
+      const userId = sessionRepo.getUserId()
+      if (userId) {
+        const u = userRepo.getById(userId)
+        if (u) setUserStable(u)
+      }
+    }
+    window.addEventListener('ui-create-works.users.change', onUsersChange)
+    return () => window.removeEventListener('ui-create-works.users.change', onUsersChange)
+  }, [setUserStable])
+
+  useEffect(() => {
     // Local (non-API) mode: derive auth from local session only.
     if (!USE_API) {
       const userId = sessionRepo.getUserId()
@@ -83,7 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const me = (raw && typeof raw === 'object' && 'user' in raw ? (raw as any).user : raw) as any
         if (!me?.id) throw new Error('me_invalid')
 
-        const u = userRepo.upsertFromServer({
+        let u = userRepo.upsertFromServer({
           id: String(me.id),
           role: me.role,
           fullName: me.fullName ?? '',
@@ -92,20 +104,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           telegramUserId: me.telegramUserId ?? null,
           emailVerified: true,
         })
+        if (u.role === 'pending' && isArbiterAccount(u)) {
+          const arbiter = userRepo.forceArbiterRole(u.id)
+          if (arbiter) u = arbiter
+        }
 
         sessionRepo.setUserId(u.id, { remember: true })
         if (u.telegramUserId) sessionRepo.setTelegramUserId(String(u.telegramUserId), { remember: true })
 
         setUserStable(u)
+        setStatus('authenticated')
 
+        // Load contracts/assignments/applications in background; do not fail auth if they error (e.g. arbiter may get 403).
         const [{ fetchContracts }, { fetchAssignments }, { fetchApplications }] = await Promise.all([
           import('@/entities/contract/lib/useContracts'),
           import('@/entities/taskAssignment/lib/useTaskAssignments'),
           import('@/entities/task/lib/useApplications'),
         ])
-        await Promise.all([fetchContracts(), fetchAssignments(), fetchApplications()])
-
-        setStatus('authenticated')
+        Promise.all([fetchContracts(), fetchAssignments(), fetchApplications()]).catch(() => {})
       } catch {
         if (cancelled) return
         setUserStable(null)
@@ -190,6 +206,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!r.ok) {
           const code = typeof raw?.error === 'string' ? raw.error : `http_${r.status}`
           if (code === 'email_not_verified') throw new Error('email_not_verified')
+          if (r.status === 401) {
+            const u = await userRepo.verifyPassword(email.trim(), password)
+            if (u?.role === 'arbiter') throw new Error('arbiter_not_on_server')
+          }
           throw new Error('invalid_credentials')
         }
         const tokenFromServer = typeof raw?.token === 'string' ? raw.token : null
@@ -240,7 +260,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Telegram login should never grant "arbiter" role.
       // First TG auth must always land on role selection (pending).
       const serverId = String(data.user.id)
-      if (serverId === 'user_dev_arbiter') {
+      if (serverId === 'user_dev_arbiter' || serverId === 'user_arbiter_main') {
         throw new Error('telegram_login_failed:invalid_user')
       }
       const existing = userRepo.getById(serverId)

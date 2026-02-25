@@ -202,14 +202,6 @@ export function runTaskAssignmentJobs(nowMs: number = Date.now()) {
         violationId,
         violationType: 'no_start_12h',
       })
-    } else if (sanction.kind === 'rating_penalty') {
-      notificationRepo.addExecutorViolationRatingPenalty({
-        recipientUserId: a.executorId,
-        taskId: a.taskId,
-        violationId,
-        violationType: 'no_start_12h',
-        deltaPercent: sanction.deltaPercent,
-      })
     } else if (sanction.kind === 'respond_block') {
       notificationRepo.addExecutorViolationRespondBlock({
         recipientUserId: a.executorId,
@@ -283,14 +275,6 @@ export function runTaskAssignmentJobs(nowMs: number = Date.now()) {
         violationId,
         violationType: 'no_submit_24h',
       })
-    } else if (sanction.kind === 'rating_penalty') {
-      notificationRepo.addExecutorViolationRatingPenalty({
-        recipientUserId: a.executorId,
-        taskId: a.taskId,
-        violationId,
-        violationType: 'no_submit_24h',
-        deltaPercent: sanction.deltaPercent,
-      })
     } else if (sanction.kind === 'respond_block') {
       notificationRepo.addExecutorViolationRespondBlock({
         recipientUserId: a.executorId,
@@ -353,6 +337,46 @@ export function runTaskAssignmentJobs(nowMs: number = Date.now()) {
     })
     contractRepo.setStatus(contract.id, 'disputed')
     taskAssignmentRepo.openDispute(a.taskId, a.executorId)
+  }
+
+  const PENDING_APPLICATION_MAX_AGE_MS = 24 * 60 * 60 * 1000 // 24h
+
+  // 4b) Auto-cancel pending applications older than 24h (customer did not accept in time).
+  for (const app of applicationRepo.listAll()) {
+    if (app.status !== 'pending') continue
+    const createdMs = ms(app.createdAt)
+    if (!Number.isFinite(createdMs)) continue
+    if (nowMs - createdMs < PENDING_APPLICATION_MAX_AGE_MS) continue
+    const task = taskRepo.getById(app.taskId)
+    const customerId = task?.createdByUserId ?? null
+    applicationRepo.reject(app.id)
+    if (customerId) {
+      notificationRepo.addTaskApplicationCancelled({
+        recipientUserId: app.executorUserId,
+        actorUserId: customerId,
+        taskId: app.taskId,
+      })
+    }
+  }
+
+  // 4c) Cancel pending applications when task has no free slots (overflow).
+  for (const task of taskRepo.list()) {
+    const maxExecutors = task.maxExecutors ?? 1
+    const assigned = task.assignedExecutorIds ?? []
+    if (assigned.length < maxExecutors) continue
+    const customerId = task.createdByUserId ?? null
+    for (const app of applicationRepo.listForTask(task.id)) {
+      if (app.status !== 'pending') continue
+      if (assigned.includes(app.executorUserId)) continue
+      applicationRepo.reject(app.id)
+      if (customerId) {
+        notificationRepo.addTaskApplicationCancelled({
+          recipientUserId: app.executorUserId,
+          actorUserId: customerId,
+          taskId: task.id,
+        })
+      }
+    }
   }
 
   // 5) Limited dispute: if open for 1 day with no actions -> auto-decision.

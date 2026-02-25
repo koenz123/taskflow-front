@@ -13,16 +13,24 @@ export type TaskDeliverable = {
 }
 
 export type TaskReferenceVideo = {
-  blobId: string
+  blobId?: string
+  /** When video was uploaded to server (API mode). */
+  url?: string
   name: string
   mimeType?: string
 }
+
+export type TaskReferenceItem =
+  | { kind: 'url'; url: string }
+  | ({ kind: 'video' } & TaskReferenceVideo)
 
 export type TaskReference =
   | { kind: 'url'; url: string }
   // Legacy single video reference (kept for backward compatibility)
   | ({ kind: 'video' } & TaskReferenceVideo)
   | { kind: 'videos'; videos: TaskReferenceVideo[] }
+  /** Up to 3 items: links and/or videos (mixed). */
+  | { kind: 'items'; items: TaskReferenceItem[] }
 
 export type Task = {
   id: string
@@ -69,6 +77,8 @@ export type Task = {
   budgetCurrency?: string
 
   dueDate?: string // ISO date: YYYY-MM-DD
+  /** Time to complete in days (1–7), set at creation. */
+  executionDays?: number
   expiresAt: string // ISO datetime, createdAt + 24h by default
   status: TaskStatus
 

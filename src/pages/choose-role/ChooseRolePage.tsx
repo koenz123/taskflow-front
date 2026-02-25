@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { paths } from '@/app/router/paths'
 import { useI18n } from '@/shared/i18n/I18nContext'
@@ -8,7 +9,18 @@ export function ChooseRolePage() {
   const auth = useAuth()
   const navigate = useNavigate()
 
+  useEffect(() => {
+    if (auth.status !== 'authenticated' || !auth.user) return
+    if (auth.user.role === 'arbiter') {
+      navigate(paths.disputes, { replace: true })
+    }
+  }, [auth.status, auth.user?.role, navigate])
+
   if (auth.status === 'loading') {
+    return null
+  }
+
+  if (auth.status === 'authenticated' && auth.user?.role === 'arbiter') {
     return null
   }
 

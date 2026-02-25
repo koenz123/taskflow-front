@@ -4,11 +4,17 @@ import { sha256Base64 } from '@/shared/lib/crypto'
 
 const STORAGE_KEY = 'ui-create-works.users.v1'
 
-// Built-in arbiter account.
+// Built-in arbiter accounts.
 const DEV_ARBITER_USER_ID = 'user_dev_arbiter'
 const DEV_ARBITER_EMAIL = 'arbiter@taskflow.dev'
 // sha256Base64('arbiter_dev_2026')
 const DEV_ARBITER_PASSWORD_HASH = 'CwG12uZbzAiJe0vqBdZQXYCj2zFiQ5rmemveW3zuxUo='
+
+// Основной аккаунт арбитра для входа (реальный).
+const ARBITER_MAIN_USER_ID = 'user_arbiter_main'
+const ARBITER_MAIN_EMAIL = 'arbiter@taskflow.ru'
+// sha256Base64('Arbiter2026!')
+const ARBITER_MAIN_PASSWORD_HASH = 'J2+P1oHfu5LhEGubUjeoa2wytndExfBy7+L7o7krfbw='
 
 type CreateUserInput = {
   role: UserRole
@@ -109,6 +115,54 @@ function readAll(): User[] {
     }
   }
 
+  // Ensure the main arbiter account exists (arbiter@taskflow.ru).
+  const idxMain = normalized.findIndex(
+    (u) => normalizeEmail(String((u as any)?.email ?? '')) === ARBITER_MAIN_EMAIL || u.id === ARBITER_MAIN_USER_ID,
+  )
+  if (idxMain === -1) {
+    normalized = normalized.concat([
+      {
+        id: ARBITER_MAIN_USER_ID,
+        role: 'arbiter',
+        fullName: 'Арбитр',
+        phone: '',
+        email: ARBITER_MAIN_EMAIL,
+        emailVerified: true,
+        personalId: createPersonalId(),
+        passwordHash: ARBITER_MAIN_PASSWORD_HASH,
+        createdAt: now,
+        updatedAt: now,
+      } satisfies User,
+    ])
+    changed = true
+  } else {
+    const prev = normalized[idxMain]
+    const next: User = {
+      ...prev,
+      id: ARBITER_MAIN_USER_ID,
+      role: 'arbiter',
+      fullName: prev.fullName?.trim() ? prev.fullName : 'Арбитр',
+      phone: typeof prev.phone === 'string' ? prev.phone : '',
+      email: ARBITER_MAIN_EMAIL,
+      emailVerified: true,
+      passwordHash: ARBITER_MAIN_PASSWORD_HASH,
+      personalId: prev.personalId || createPersonalId(),
+      updatedAt: now,
+      createdAt: prev.createdAt || now,
+    }
+    if (
+      next.id !== prev.id ||
+      next.role !== prev.role ||
+      normalizeEmail(next.email) !== normalizeEmail(prev.email) ||
+      next.emailVerified !== prev.emailVerified ||
+      next.passwordHash !== prev.passwordHash
+    ) {
+      normalized = normalized.slice()
+      normalized[idxMain] = next
+      changed = true
+    }
+  }
+
   if (changed) writeAll(normalized)
   return normalized
 }
@@ -124,6 +178,14 @@ function normalizeEmail(email: string) {
 
 function isUserRole(value: unknown): value is UserRole {
   return value === 'customer' || value === 'executor' || value === 'arbiter' || value === 'pending'
+}
+
+/** Returns true if this user is a known arbiter account (by id or email). */
+export function isArbiterAccount(user: { id?: string; email?: string } | null): boolean {
+  if (!user) return false
+  if (user.id === DEV_ARBITER_USER_ID || user.id === ARBITER_MAIN_USER_ID) return true
+  const email = (typeof user.email === 'string' ? user.email : '').trim().toLowerCase()
+  return email === ARBITER_MAIN_EMAIL || email === DEV_ARBITER_EMAIL
 }
 
 export const userRepo = {
@@ -296,13 +358,24 @@ export const userRepo = {
 
     const prev = idx === -1 ? null : users[idx]
     const email = typeof serverUser.email === 'string' ? normalizeEmail(serverUser.email) : prev?.email ?? ''
-    const allowArbiterRole = serverUser.id === DEV_ARBITER_USER_ID
+    const allowArbiterRole =
+      serverUser.id === DEV_ARBITER_USER_ID ||
+      serverUser.id === ARBITER_MAIN_USER_ID ||
+      email === ARBITER_MAIN_EMAIL ||
+      email === DEV_ARBITER_EMAIL
     const incomingRole = isUserRole(serverUser.role) ? serverUser.role : null
-    const safeRole: UserRole | null = incomingRole === 'arbiter' && !allowArbiterRole ? null : incomingRole
+    // Trust server role (API mode): if backend sends role 'arbiter', keep it. For local mode, known arbiter accounts get arbiter even when server sends pending.
+    const safeRole: UserRole | null = incomingRole
+    const effectiveRole: UserRole =
+      safeRole === 'arbiter'
+        ? 'arbiter'
+        : allowArbiterRole && (safeRole === 'pending' || prev?.role === 'arbiter')
+          ? 'arbiter'
+          : (safeRole ?? prev?.role) ?? 'pending'
 
     const next: User = {
       id: serverUser.id,
-      role: (safeRole ?? prev?.role) ?? 'pending',
+      role: effectiveRole,
       fullName: (typeof serverUser.fullName === 'string' ? serverUser.fullName : prev?.fullName ?? '').trim(),
       phone: (typeof serverUser.phone === 'string' ? serverUser.phone : prev?.phone ?? '').trim(),
       email,
@@ -340,6 +413,18 @@ export const userRepo = {
     const now = new Date().toISOString()
     const prev = users[idx]
     const next: User = { ...prev, role, updatedAt: now }
+    users[idx] = next
+    writeAll(users)
+    return next
+  },
+
+  /** Force role to arbiter for a user (e.g. when backend returns pending for arbiter account). */
+  forceArbiterRole(userId: string): User | null {
+    const users = readAll()
+    const idx = users.findIndex((u) => u.id === userId)
+    if (idx === -1) return null
+    const now = new Date().toISOString()
+    const next: User = { ...users[idx], role: 'arbiter', updatedAt: now }
     users[idx] = next
     writeAll(users)
     return next

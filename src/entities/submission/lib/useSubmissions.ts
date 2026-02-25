@@ -27,6 +27,16 @@ function notifyApi() {
   for (const cb of apiStore.subs) cb()
 }
 
+function sameList(a: Submission[], b: Submission[]) {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].id !== b[i].id) return false
+    if (a[i].createdAt !== b[i].createdAt) return false
+  }
+  return true
+}
+
 export async function fetchSubmissions() {
   if (!USE_API) return
   const token = sessionRepo.getToken()
@@ -47,13 +57,16 @@ export async function fetchSubmissions() {
   try {
     const raw = await api.get<any>('/submissions')
     const list = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : Array.isArray(raw?.data) ? raw.data : []
-    apiSnapshot = (list as unknown[]).map((x) => submissionRepo.normalize(x)).filter(Boolean) as Submission[]
+    const next = (list as unknown[]).map((x) => submissionRepo.normalize(x)).filter(Boolean) as Submission[]
+    if (!sameList(apiSnapshot, next)) {
+      apiSnapshot = next
+      notifyApi()
+    }
     apiHasLoaded = true
   } catch {
     // keep previous
   }
   apiRefreshing = false
-  notifyApi()
 }
 
 export async function refreshSubmissions() {

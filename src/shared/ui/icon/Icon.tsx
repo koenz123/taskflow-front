@@ -13,6 +13,8 @@ export type IconName =
   | 'note'
   | 'user'
   | 'users'
+  | 'usersTwo'
+  | 'usersThree'
   | 'palette'
   | 'gavel'
   | 'chat'
@@ -39,6 +41,11 @@ export type IconProps = {
   size?: number
   className?: string
   title?: string
+}
+
+/** Icon name for "assigned executors" by count: 1 = user, 2 = usersTwo, 3+ = usersThree */
+export function assignedExecutorsIconName(count: number): IconName {
+  return count >= 3 ? 'usersThree' : count === 2 ? 'usersTwo' : 'user'
 }
 
 function Svg(props: {
@@ -157,8 +164,8 @@ export function Icon(props: IconProps) {
     case 'user':
       return (
         <Svg {...common}>
-          <path d="M20 21a8 8 0 10-16 0" />
-          <circle cx="12" cy="8" r="4" />
+          <circle cx="12" cy="6" r="3.5" />
+          <path d="M6 21v-1a4 4 0 014-4h4a4 4 0 014 4v1" />
         </Svg>
       )
     case 'users':
@@ -170,6 +177,26 @@ export function Icon(props: IconProps) {
           <circle cx="12" cy="8" r="3.5" />
           <path d="M18 8.5a2.5 2.5 0 10-5 0" />
           <path d="M6 8.5a2.5 2.5 0 115 0" />
+        </Svg>
+      )
+    case 'usersTwo':
+      return (
+        <Svg {...common}>
+          <circle cx="6" cy="6" r="2.5" />
+          <path d="M2 20v-.5a2.5 2.5 0 012.5-2.5h3a2.5 2.5 0 012.5 2.5V20" />
+          <circle cx="18" cy="6" r="2.5" />
+          <path d="M22 20v-.5a2.5 2.5 0 00-2.5-2.5h-3a2.5 2.5 0 00-2.5 2.5V20" />
+        </Svg>
+      )
+    case 'usersThree':
+      return (
+        <Svg {...common}>
+          <circle cx="6" cy="7" r="2.2" />
+          <path d="M2 20v-.5a2 2 0 012-2h4a2 2 0 012 2v.5" />
+          <circle cx="18" cy="7" r="2.2" />
+          <path d="M14 20v-.5a2 2 0 012-2h4a2 2 0 012 2v.5" />
+          <circle cx="12" cy="9" r="3" />
+          <path d="M6 21v-1a3 3 0 013-3h6a3 3 0 013 3v1" />
         </Svg>
       )
     case 'palette':

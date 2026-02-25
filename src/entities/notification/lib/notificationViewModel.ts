@@ -1,7 +1,7 @@
 import type { Notification } from '../model/notification'
 import type { Task } from '@/entities/task/model/task'
 import { pickText } from '@/entities/task/lib/taskText'
-import { disputeThreadPath, paths, taskDetailsPath, userProfilePath } from '@/app/router/paths'
+import { disputeThreadPath, paths, taskDetailsPath, supportThreadPath, userProfilePath } from '@/app/router/paths'
 import type { TranslationKey } from '@/shared/i18n/translations'
 import { timeAgo } from '@/shared/lib/timeAgo'
 import type { IconName } from '@/shared/ui/icon/Icon'
@@ -71,6 +71,8 @@ function iconFor(type: Notification['type']): IconName {
     case 'dispute_opened':
       return 'gavel'
     case 'dispute_message':
+      return 'chat'
+    case 'support_message':
       return 'chat'
     case 'dispute_status':
       return 'refresh'
@@ -308,6 +310,20 @@ export function buildNotificationVM(params: {
   const taskTitle = taskTitleOrFallback(task, locale)
   const safeTaskId = n.taskId && n.taskId !== 'unknown_task' ? n.taskId : null
 
+  if (n.type === 'support_message') {
+    return {
+      id: n.id,
+      unread: !n.readAt,
+      icon: iconFor(n.type),
+      title: locale === 'ru' ? 'Обращение в поддержку' : 'Support request',
+      subtitle: n.message?.trim() || (locale === 'ru' ? 'Новое сообщение' : 'New message'),
+      timeLabel: timeAgo(n.createdAt, locale, nowMs),
+      href: n.supportThreadId ? supportThreadPath(n.supportThreadId) : paths.supportInbox,
+      actorHref: actor?.id ? userProfilePath(actor.id) : null,
+      completionHref: null,
+    }
+  }
+
   if (n.type === 'dispute_opened' || n.type === 'dispute_message' || n.type === 'dispute_status' || n.type === 'dispute_sla_threshold') {
     const subtitle =
       locale === 'ru'
@@ -393,7 +409,9 @@ export function buildNotificationVM(params: {
       const violationKey =
         n.violationType === 'no_submit_24h'
           ? ('notifications.violation.noSubmit24h' as const)
-          : ('notifications.violation.noStart12h' as const)
+          : n.violationType === 'force_majeure_abuse'
+            ? ('notifications.violation.forceMajeureAbuse' as const)
+            : ('notifications.violation.noStart12h' as const)
       const violation = t(violationKey)
 
       const sanctionText = (() => {
@@ -445,10 +463,20 @@ export function buildNotificationFeedVM(params: {
   taskById: Map<string, Task>
   locale: 'ru' | 'en'
   t: (key: TranslationKey, params?: Record<string, string | number>) => string
+  /** When set, only dispute notifications for these dispute IDs are shown (hides orphan/deleted disputes). */
+  visibleDisputeIds?: Set<string>
 }): NotificationVM[] {
-  const { list, actorById, taskById, locale, t } = params
+  const { list, actorById, taskById, locale, t, visibleDisputeIds } = params
 
-  const unreadDisputeMsgs = list.filter((n) => n.type === 'dispute_message' && !n.readAt && n.disputeId)
+  const listToUse =
+    visibleDisputeIds != null
+      ? list.filter((n) => {
+          if (n.type !== 'dispute_opened' && n.type !== 'dispute_message') return true
+          return typeof n.disputeId === 'string' && visibleDisputeIds.has(n.disputeId)
+        })
+      : list
+
+  const unreadDisputeMsgs = listToUse.filter((n) => n.type === 'dispute_message' && !n.readAt && n.disputeId)
   const grouped = new Map<string, Notification[]>()
   for (const n of unreadDisputeMsgs) {
     const key = String(n.disputeId)
@@ -483,7 +511,7 @@ export function buildNotificationFeedVM(params: {
 
   // remove aggregated source notifications from list
   const hiddenIds = new Set<string>(unreadDisputeMsgs.map((n) => n.id))
-  const rest = list.filter((n) => !hiddenIds.has(n.id)).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const rest = listToUse.filter((n) => !hiddenIds.has(n.id)).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 
   const singles = rest.map((n) => {
     const actor = actorById.get(n.actorUserId) ?? null

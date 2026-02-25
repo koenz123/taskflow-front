@@ -17,7 +17,6 @@ type StatusFilter = 'all' | 'open' | 'in_review'
 type Sort = 'oldest' | 'highest_amount'
 
 const SLA_NEARING_MS = 6 * 60 * 60 * 1000
-const DEV_ARBITER_USER_ID = 'user_dev_arbiter'
 
 function statusLabel(status: string, locale: 'ru' | 'en') {
   if (locale === 'ru') {
@@ -69,7 +68,7 @@ export function DisputesInboxPage() {
     return () => window.clearInterval(id)
   }, [])
 
-  const allowed = user.role === 'arbiter' && user.id === DEV_ARBITER_USER_ID
+  const allowed = user.role === 'arbiter'
 
   const [status, setStatus] = useState<StatusFilter>('all')
   const [minAmount, setMinAmount] = useState('')
@@ -110,7 +109,8 @@ export function DisputesInboxPage() {
       const authorId = (m as any)?.authorUserId
       const createdAt = (m as any)?.createdAt
       if (typeof createdAt !== 'string') continue
-      const isAdmin = authorId === DEV_ARBITER_USER_ID || kind === 'system'
+      const author = typeof authorId === 'string' ? userById.get(authorId) : undefined
+      const isAdmin = author?.role === 'arbiter' || kind === 'system'
       const rec = byDispute.get(disputeId) ?? { lastAdminAt: null, unanswered: 0 }
       if (isAdmin) {
         if (!rec.lastAdminAt || createdAt > rec.lastAdminAt) {
@@ -125,7 +125,7 @@ export function DisputesInboxPage() {
       byDispute.set(disputeId, rec)
     }
     return byDispute
-  }, [allMsgs])
+  }, [allMsgs, userById])
 
   const repeatDisputeCountByUserId = useMemo(() => {
     const sinceMs = nowMs - 30 * 24 * 60 * 60 * 1000
@@ -228,22 +228,22 @@ export function DisputesInboxPage() {
 
           <label className="disputesInboxField">
             <span className="disputesInboxField__label">{locale === 'ru' ? 'Сумма от' : 'Amount min'}</span>
-            <input className="disputesInboxInput" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} inputMode="decimal" placeholder="0" />
+            <input className="disputesInboxInput" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} inputMode="decimal" placeholder="0" autoComplete="off" />
           </label>
 
           <label className="disputesInboxField">
             <span className="disputesInboxField__label">{locale === 'ru' ? 'Сумма до' : 'Amount max'}</span>
-            <input className="disputesInboxInput" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} inputMode="decimal" placeholder="∞" />
+            <input className="disputesInboxInput" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} inputMode="decimal" placeholder="∞" autoComplete="off" />
           </label>
 
           <label className="disputesInboxField">
             <span className="disputesInboxField__label">{locale === 'ru' ? 'Открыт с' : 'Opened from'}</span>
-            <input className="disputesInboxInput" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            <input className="disputesInboxInput" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} autoComplete="off" />
           </label>
 
           <label className="disputesInboxField">
             <span className="disputesInboxField__label">{locale === 'ru' ? 'Открыт по' : 'Opened to'}</span>
-            <input className="disputesInboxInput" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            <input className="disputesInboxInput" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} autoComplete="off" />
           </label>
 
           <label className="disputesInboxCheck">

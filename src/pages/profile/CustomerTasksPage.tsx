@@ -36,7 +36,7 @@ import { Pagination } from '@/shared/ui/pagination/Pagination'
 import { useToast } from '@/shared/ui/toast/ToastProvider'
 import { notifyToTelegramAndUi } from '@/shared/notify/notify'
 import { ApiError } from '@/shared/api/api'
-import { Icon } from '@/shared/ui/icon/Icon'
+import { assignedExecutorsIconName, Icon } from '@/shared/ui/icon/Icon'
 import { taskEscrowAmountInRub } from '@/shared/lib/usdRubRate'
 
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
@@ -358,7 +358,7 @@ export function CustomerTasksPage() {
       )
       for (const pending of pendingApplications) {
         applicationRepo.reject(pending.id)
-        notificationRepo.addTaskAssignedElse({
+        notificationRepo.addTaskApplicationCancelled({
           recipientUserId: pending.executorUserId,
           actorUserId: auth.user.id,
           taskId: updatedTask.id,
@@ -491,6 +491,7 @@ export function CustomerTasksPage() {
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  autoComplete="off"
                   placeholder={t('customerTasks.search.placeholder')}
                   className="customerTasksSearchInput"
                 />
@@ -614,7 +615,7 @@ export function CustomerTasksPage() {
                           </span>
                         ) : null}
                         <span className="customerTasksItemBadge">
-                          <Icon name="users" size={16} className="iconInline" />
+                          <Icon name={assignedExecutorsIconName(task.assignedExecutorIds.length)} size={16} className="iconInline" />
                           {t('task.meta.assigned')}: {task.assignedExecutorIds.length}/{task.maxExecutors ?? 1}
                         </span>
                         {task.completionVideoUrl ? (

@@ -46,6 +46,7 @@ export function RevisionRequestModal({ open, executorName, onClose, onSubmit }: 
           <textarea
             className="revisionModal__detail"
             placeholder={locale === 'ru' ? 'Например: замените музыку, добавьте субтитры, исправьте первый кадр…' : 'E.g. replace music, add subtitles, fix the first frame…'}
+            autoComplete="off"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             rows={5}

@@ -72,19 +72,23 @@ export async function fetchDisputeMessages(disputeId: string) {
       } catch (e) {
         if (e instanceof ApiError && e.status === 404) {
           next = await api.get<DisputeMessage[]>(`/dispute-messages?disputeId=${encodeURIComponent(disputeId)}`)
+        } else if (e instanceof ApiError && e.status === 403) {
+          next = []
         } else {
           throw e
         }
       }
       const prev = apiSnapshotByDisputeId.get(disputeId) ?? []
-      if (!sameList(prev, next)) apiSnapshotByDisputeId.set(disputeId, next)
+      if (!sameList(prev, next)) {
+        apiSnapshotByDisputeId.set(disputeId, next)
+        notifyDispute(disputeId)
+      }
       apiHasLoadedByDisputeId.set(disputeId, true)
     } catch {
-      // keep previous
+      // keep previous; 403 is handled above with empty list + hasLoaded
     } finally {
       apiRefreshingByDisputeId.set(disputeId, false)
       inflightByDisputeId.delete(disputeId)
-      notifyDispute(disputeId)
     }
   })()
   inflightByDisputeId.set(disputeId, p)

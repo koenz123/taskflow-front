@@ -197,6 +197,7 @@ export function MultiSelect({
                 value={customValue}
                 onChange={(e) => setCustomValue(e.target.value)}
                 placeholder={customPlaceholder ?? 'Добавить своё…'}
+                autoComplete="off"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault()

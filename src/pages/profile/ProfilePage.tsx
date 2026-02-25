@@ -45,14 +45,14 @@ import './profile.css'
 import { previewMetaList } from '@/shared/lib/metaList'
 import { StatusPill, type StatusTone } from '@/shared/ui/status-pill/StatusPill'
 import { useExecutorViolations } from '@/entities/executorSanction/lib/useExecutorViolations'
-import { useDisputes } from '@/entities/dispute/lib/useDisputes'
+import { refreshDisputes, useDisputes } from '@/entities/dispute/lib/useDisputes'
 import { disputeRepo } from '@/entities/dispute/lib/disputeRepo'
 import { disputeThreadPath } from '@/app/router/paths'
 import { HelpTip } from '@/shared/ui/help-tip/HelpTip'
 import { notifyToTelegramAndUi } from '@/shared/notify/notify'
 import { ApiError, api } from '@/shared/api/api'
-import { refreshNotifications } from '@/entities/notification/lib/useNotifications'
-import { Icon } from '@/shared/ui/icon/Icon'
+import { markNotificationsReadOptimistic, markReadForDisputeOptimistic, refreshNotifications } from '@/entities/notification/lib/useNotifications'
+import { assignedExecutorsIconName, Icon } from '@/shared/ui/icon/Icon'
 
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
 
@@ -62,6 +62,7 @@ type ProfileTab =
   | 'disputes'
   | 'balance'
   | 'executor_active'
+  | 'executor_my_responses'
   | 'executor_completed'
   | 'executor_uncompleted'
   | 'violations'
@@ -74,7 +75,7 @@ export function ProfilePage() {
   const telegramUserId = auth.user?.telegramUserId ?? null
   const userEmail = auth.user?.email ?? null
   const toastUi = (msg: string, tone?: 'success' | 'info' | 'error') => toast.showToast({ message: msg, tone })
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const tasks = useTasks()
   const users = useUsers()
   const contracts = useContracts()
@@ -252,7 +253,7 @@ export function ProfilePage() {
         .filter((x) => x.status === 'pending' && x.id !== app.id)
       for (const p of pending) {
         applicationRepo.reject(p.id)
-        notificationRepo.addTaskAssignedElse({
+        notificationRepo.addTaskApplicationCancelled({
           recipientUserId: p.executorUserId,
           actorUserId: user.id,
           taskId: finalTask.id,
@@ -396,6 +397,26 @@ export function ProfilePage() {
   const myCompleted = completed.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   const myUncompleted = uncompleted.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 
+  const myPendingApplications = useMemo(
+    () =>
+      user?.role === 'executor' && user?.id
+        ? applications.filter((app) => app.executorUserId === user.id && app.status === 'pending')
+        : [],
+    [applications, user?.id, user?.role],
+  )
+  const myResponsesTasks = useMemo(() => {
+    if (!user || user.role !== 'executor') return [] as Array<{ task: (typeof tasks)[number]; application: (typeof applications)[number] }>
+    const list: Array<{ task: (typeof tasks)[number]; application: (typeof applications)[number] }> = []
+    for (const app of myPendingApplications) {
+      const task = USE_API ? tasks.find((t) => t.id === app.taskId) ?? null : taskRepo.getById(app.taskId)
+      if (!task) continue
+      const alreadyAssigned = (task.assignedExecutorIds ?? []).some((eid) => executorIdSet.has(String(eid)))
+      if (alreadyAssigned) continue
+      list.push({ task, application: app })
+    }
+    return list.sort((a, b) => b.application.createdAt.localeCompare(a.application.createdAt))
+  }, [myPendingApplications, tasks, user, executorIdSet])
+
   const myTasksPageCount = useMemo(
     () => Math.max(1, Math.ceil(postedMy.length / MY_TASKS_PAGE_SIZE)),
     [MY_TASKS_PAGE_SIZE, postedMy.length],
@@ -419,25 +440,6 @@ export function ProfilePage() {
     }).length
   }, [contracts, executorIdSet, myActive, taskAssignments, user])
 
-  const disputeUnreadCount = useMemo(() => {
-    if (!user) return 0
-    return notifications.filter(
-      (n) => !n.readAt && (n.type === 'dispute_opened' || n.type === 'dispute_message'),
-    ).length
-  }, [notifications, user])
-
-  const unreadDisputeCountById = useMemo(() => {
-    const map = new Map<string, number>()
-    for (const n of notifications) {
-      if (n.readAt) continue
-      if (n.type !== 'dispute_opened' && n.type !== 'dispute_message') continue
-      const id = typeof n.disputeId === 'string' ? n.disputeId : ''
-      if (!id) continue
-      map.set(id, (map.get(id) ?? 0) + 1)
-    }
-    return map
-  }, [notifications])
-
   const disputesForProfile = useMemo(() => {
     if (!user) return []
     if (user.role !== 'customer' && user.role !== 'executor') return []
@@ -451,6 +453,67 @@ export function ProfilePage() {
       .slice()
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   }, [contracts, disputes, executorIdSet, user])
+
+  const visibleDisputeIds = useMemo(() => new Set(disputesForProfile.map((d) => d.id)), [disputesForProfile])
+
+  useEffect(() => {
+    if (USE_API && user?.role && (user.role === 'customer' || user.role === 'executor')) {
+      void refreshDisputes()
+      void refreshNotifications()
+    }
+  }, [USE_API, user?.id, user?.role])
+
+  useEffect(() => {
+    if (searchParams.get('tab') !== 'disputes' || !user?.id || visibleDisputeIds.size === 0) return
+    if (USE_API) {
+      visibleDisputeIds.forEach((disputeId) => markReadForDisputeOptimistic(disputeId))
+    } else {
+      visibleDisputeIds.forEach((disputeId) => notificationRepo.markReadForDispute(user.id, disputeId))
+    }
+  }, [USE_API, searchParams, visibleDisputeIds, user?.id])
+
+  useEffect(() => {
+    if (!user?.id) return
+    const disputeTypes = ['dispute_opened', 'dispute_message'] as const
+    const orphans = notifications.filter(
+      (n) =>
+        !n.readAt &&
+        disputeTypes.includes(n.type as (typeof disputeTypes)[number]) &&
+        typeof n.disputeId === 'string' &&
+        !visibleDisputeIds.has(n.disputeId),
+    )
+    if (orphans.length === 0) return
+    if (USE_API) {
+      markNotificationsReadOptimistic(orphans.map((x) => x.id))
+    } else {
+      const disputeIds = Array.from(new Set(orphans.map((n) => n.disputeId!).filter(Boolean)))
+      for (const disputeId of disputeIds) notificationRepo.markReadForDispute(user.id, disputeId)
+    }
+  }, [user?.id, notifications, visibleDisputeIds])
+
+  const disputeUnreadCount = useMemo(() => {
+    if (!user) return 0
+    if (disputesForProfile.length === 0) return 0
+    return notifications.filter(
+      (n) =>
+        !n.readAt &&
+        (n.type === 'dispute_opened' || n.type === 'dispute_message') &&
+        typeof n.disputeId === 'string' &&
+        visibleDisputeIds.has(n.disputeId),
+    ).length
+  }, [notifications, user, visibleDisputeIds, disputesForProfile.length])
+
+  const unreadDisputeCountById = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const n of notifications) {
+      if (n.readAt) continue
+      if (n.type !== 'dispute_opened' && n.type !== 'dispute_message') continue
+      const id = typeof n.disputeId === 'string' ? n.disputeId : ''
+      if (!id || !visibleDisputeIds.has(id)) continue
+      map.set(id, (map.get(id) ?? 0) + 1)
+    }
+    return map
+  }, [notifications, visibleDisputeIds])
 
   // (avg time left UI removed)
 
@@ -501,19 +564,26 @@ export function ProfilePage() {
 
   const defaultTab: ProfileTab = user.role === 'customer' ? 'my_tasks' : 'executor_active'
   const tabFromQuery = searchParams.get('tab')
-  const initialTab: ProfileTab =
+  const tab: ProfileTab =
     tabFromQuery === 'balance' ||
     tabFromQuery === 'my_tasks' ||
     tabFromQuery === 'applications' ||
     tabFromQuery === 'disputes' ||
     tabFromQuery === 'executor_active' ||
+    tabFromQuery === 'executor_my_responses' ||
     tabFromQuery === 'executor_completed' ||
     tabFromQuery === 'executor_uncompleted' ||
     tabFromQuery === 'violations' ||
     tabFromQuery === 'settings'
       ? tabFromQuery
       : defaultTab
-  const [tab, setTab] = useState<ProfileTab>(initialTab)
+  const setTab = (newTab: ProfileTab) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.set('tab', newTab)
+      return next
+    })
+  }
   const [rateContractId, setRateContractId] = useState<string | null>(null)
   const [rateExecutorContractId, setRateExecutorContractId] = useState<string | null>(null)
 
@@ -579,14 +649,14 @@ export function ProfilePage() {
 
   function sanctionKeyByIndex(n: number) {
     if (n <= 1) return 'violations.sanction.warning' as const
-    if (n === 2) return 'violations.sanction.ratingPenalty5' as const
-    if (n === 3) return 'violations.sanction.block24h' as const
+    if (n === 2) return 'violations.sanction.block24h' as const
+    if (n === 3) return 'violations.sanction.block48h' as const
     if (n === 4) return 'violations.sanction.block72h' as const
     return 'violations.sanction.ban' as const
   }
 
   function sanctionIsDanger(n: number) {
-    return n >= 3
+    return n >= 2
   }
 
   function disputeStatusLabel(status: string) {
@@ -651,6 +721,21 @@ export function ProfilePage() {
                 <span className="profileNav__label">
                   {t('profile.stats.uncompleted')}
                 </span>
+              </button>
+            ) : null}
+
+            {user.role === 'executor' ? (
+              <button
+                type="button"
+                className={`profileNav__item${tab === 'executor_my_responses' ? ' profileNav__item--active' : ''}`}
+                onClick={() => setTab('executor_my_responses')}
+              >
+                <span className="profileNav__label">{t('profile.myResponses')}</span>
+                {myResponsesTasks.length > 0 ? (
+                  <span className="profileNav__badge" aria-label={`${t('profile.myResponses')}: ${myResponsesTasks.length}`}>
+                    {myResponsesTasks.length > 99 ? '99+' : myResponsesTasks.length}
+                  </span>
+                ) : null}
               </button>
             ) : null}
 
@@ -941,7 +1026,7 @@ export function ProfilePage() {
                                 </span>
                               ) : null}
                               <span className="customerTasksItemBadge">
-                                <Icon name="users" size={16} className="iconInline" />
+                                <Icon name={assignedExecutorsIconName(task.assignedExecutorIds.length)} size={16} className="iconInline" />
                                 {t('task.meta.assigned')}: {task.assignedExecutorIds.length}/{task.maxExecutors ?? 1}
                               </span>
                               {task.completionVideoUrl ? (
@@ -1407,6 +1492,77 @@ export function ProfilePage() {
               </div>
             ) : null}
 
+            {tab === 'executor_my_responses' && user.role === 'executor' ? (
+              <div className="profilePanel">
+                <div className="profilePanel__header">
+                  <h2 className="profilePanel__title">
+                    {t('profile.myResponses')} <span className="profilePanel__countInline">({myResponsesTasks.length})</span>
+                  </h2>
+                </div>
+                {myResponsesTasks.length === 0 ? (
+                  <div className="profileEmpty">
+                    {t('profile.myResponses.empty')} <Link to={paths.tasks}>{t('profile.takeTask')}</Link>
+                  </div>
+                ) : (
+                  <ul className="customerTasksList">
+                    {myResponsesTasks.slice(0, MAX_PREVIEW).map(({ task, application }) => {
+                      const createdMs = new Date(application.createdAt).getTime()
+                      const expiresAtMs = createdMs + 24 * 60 * 60 * 1000
+                      const leftMs = expiresAtMs - nowMs
+                      const expired = leftMs <= 0
+                      return (
+                        <li
+                          key={application.id}
+                          className="customerTasksItem"
+                          role="link"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            const target = e.target
+                            if (!(target instanceof HTMLElement)) {
+                              navigate(taskDetailsPath(task.id))
+                              return
+                            }
+                            if (target.closest('a,button,input,textarea,select,[role="button"]')) return
+                            navigate(taskDetailsPath(task.id))
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              navigate(taskDetailsPath(task.id))
+                            }
+                          }}
+                        >
+                          <div className="customerTasksItemContent">
+                            <div className="customerTasksItemHeader">
+                              <Link className="customerTasksItemTitle" to={taskDetailsPath(task.id)}>
+                                {pickText(task.title, locale)}
+                              </Link>
+                            </div>
+                            <div className="customerTasksItemBadges">
+                              <span className="customerTasksItemBadge">
+                                {locale === 'ru' ? 'Отклик' : 'Response'}: {timeAgo(application.createdAt, locale, nowMs)}
+                              </span>
+                              {!expired && leftMs < 24 * 60 * 60 * 1000 ? (
+                                <span className="customerTasksItemBadge" style={{ opacity: 0.9 }}>
+                                  {locale === 'ru' ? 'Решение заказчика в течение' : 'Customer decision within'}: {formatTimeLeft(leftMs, locale)}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="customerTasksItemRight">
+                            <StatusPill
+                              tone="pending"
+                              label={locale === 'ru' ? 'Ожидает решения заказчика' : 'Awaiting customer decision'}
+                            />
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+              </div>
+            ) : null}
+
             {tab === 'executor_completed' && user.role === 'executor' ? (
               <div className="profilePanel">
                 <div className="profilePanel__header">
@@ -1584,11 +1740,12 @@ export function ProfilePage() {
                         locale === 'ru' ? 'Нарушения:' : 'Violations:',
                         `• ${t('violations.help.violation.noStart12h')}`,
                         `• ${t('violations.help.violation.noSubmit24h')}`,
+                        `• ${t('violations.help.violation.forceMajeureAbuse')}`,
                         '',
                         t('violations.help.sanctionsTitle'),
                         `• ${t('violations.help.sanctions.warning')}`,
-                        `• ${t('violations.help.sanctions.ratingPenalty')}`,
                         `• ${t('violations.help.sanctions.block24')}`,
+                        `• ${t('violations.help.sanctions.block48')}`,
                         `• ${t('violations.help.sanctions.block72')}`,
                         `• ${t('violations.help.sanctions.ban')}`,
                       ].join('\n')}
@@ -1611,7 +1768,9 @@ export function ProfilePage() {
                       const reasonKey =
                         v.type === 'no_submit_24h'
                           ? ('violations.reason.noSubmit24h' as const)
-                          : ('violations.reason.noStart12h' as const)
+                          : v.type === 'force_majeure_abuse'
+                            ? ('violations.reason.forceMajeureAbuse' as const)
+                            : ('violations.reason.noStart12h' as const)
 
                       return (
                         <li
@@ -1687,6 +1846,7 @@ export function ProfilePage() {
                           setDepositAmount(e.target.value)
                           setBalanceMessage(null)
                         }}
+                        autoComplete="off"
                       />
               <button
                 type="button"
@@ -1758,6 +1918,7 @@ export function ProfilePage() {
                           setWithdrawAmount(e.target.value)
                           setWithdrawMessage(null)
                         }}
+                        autoComplete="off"
                       />
                       <button
                         type="button"

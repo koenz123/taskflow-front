@@ -28,6 +28,10 @@ import { ViolationsPage } from '@/pages/violations/ViolationsPage'
 import { ReviewsPage } from '@/pages/reviews/ReviewsPage'
 import { DisputesInboxPage } from '@/pages/disputes/DisputesInboxPage'
 import { DisputeThreadPage } from '@/pages/disputes/DisputeThreadPage'
+import { SupportPage } from '@/pages/support/SupportPage'
+import { SupportInboxPage } from '@/pages/support/SupportInboxPage'
+import { SupportThreadPage } from '@/pages/support/SupportThreadPage'
+import { BlockedUsersPage } from '@/pages/support/BlockedUsersPage'
 import { ChooseRolePage } from '@/pages/choose-role/ChooseRolePage'
 import { ProtectedRoute } from '@/shared/auth/ProtectedRoute'
 import { RequireTasksLoaded } from '@/shared/tasks/RequireTasksLoaded'
@@ -151,6 +155,44 @@ export function AppRouter() {
             <RequireAuth>
               <ProtectedRoute>
                 <DisputeThreadPage />
+              </ProtectedRoute>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path={paths.support}
+          element={
+            <RequireAuth>
+              <SupportPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path={paths.supportInbox}
+          element={
+            <RequireAuth>
+              <ProtectedRoute>
+                {isArbiter ? <SupportInboxPage /> : <Navigate to={paths.profile} replace />}
+              </ProtectedRoute>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path={paths.supportThread}
+          element={
+            <RequireAuth>
+              <ProtectedRoute>
+                <SupportThreadPage />
+              </ProtectedRoute>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path={paths.blockedUsers}
+          element={
+            <RequireAuth>
+              <ProtectedRoute>
+                {isArbiter ? <BlockedUsersPage /> : <Navigate to={paths.profile} replace />}
               </ProtectedRoute>
             </RequireAuth>
           }

@@ -17,6 +17,7 @@ import {
 import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import { useTasks } from '@/entities/task/lib/useTasks'
 import { buildNotificationFeedVM } from '@/entities/notification/lib/notificationViewModel'
+import { useVisibleDisputeIds } from '@/entities/dispute/lib/useVisibleDisputeIds'
 import { api } from '@/shared/api/api'
 
 const USE_API = import.meta.env.VITE_DATA_SOURCE === 'api'
@@ -206,11 +207,18 @@ export function Header() {
     </div>
   )
 
+  const visibleDisputeIds = useVisibleDisputeIds()
+
   const notifBell = (() => {
     const user = auth.user
     if (!user) return null
     const list = notifications
-    const unreadList = list.filter((n) => !n.readAt)
+    const unreadList = list.filter((n) => {
+      if (n.readAt) return false
+      if (n.type === 'dispute_opened' || n.type === 'dispute_message')
+        return typeof n.disputeId === 'string' && visibleDisputeIds.has(n.disputeId)
+      return true
+    })
     const unread = unreadList.length
     const badgeText = unread > 99 ? '99+' : unread ? String(unread) : null
     const feed = buildNotificationFeedVM({
@@ -219,6 +227,7 @@ export function Header() {
       taskById,
       locale,
       t,
+      visibleDisputeIds,
     })
     const preview = feed.slice(0, 6)
 

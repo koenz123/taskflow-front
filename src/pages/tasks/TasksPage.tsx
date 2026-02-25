@@ -21,7 +21,7 @@ import './tasks.css'
 import { StatusPill } from '@/shared/ui/status-pill/StatusPill'
 import { Pagination } from '@/shared/ui/pagination/Pagination'
 import { timeAgo } from '@/shared/lib/timeAgo'
-import { Icon } from '@/shared/ui/icon/Icon'
+import { assignedExecutorsIconName, Icon } from '@/shared/ui/icon/Icon'
 
 function formatBudget(amount?: number, currency?: string) {
   if (!amount) return null
@@ -207,10 +207,12 @@ export function TasksPage() {
     return out
   }, [allTasks, myActiveAssignments, tokens, filterCategory, filterLocation, nowMs])
 
-  const isBanned = useMemo(() => {
-    if (!isExecutor || !auth.user?.id) return false
-    return executorRestrictionRepo.get(auth.user.id).accountStatus === 'banned'
-  }, [auth.user?.id, isExecutor])
+  const respondCheck = useMemo(() => {
+    if (!isExecutor || !auth.user?.id) return { ok: true as const, reason: null as string | null, until: null as string | null }
+    return executorRestrictionRepo.canRespond(auth.user.id, Date.now())
+  }, [auth.user?.id, isExecutor, nowMs])
+  const isBanned = !respondCheck.ok && respondCheck.reason === 'banned'
+  const isBlocked = !respondCheck.ok && respondCheck.reason === 'blocked'
 
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 30_000)
@@ -255,6 +257,25 @@ export function TasksPage() {
           <div>
             <h1 className="tasksTitle">{t('tasks.banned.title')}</h1>
             <p className="tasksSubtitle">{t('tasks.banned.text')}</p>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
+  if (isBlocked && respondCheck.until) {
+    const untilDate = new Date(respondCheck.until)
+    const untilLabel = Number.isFinite(untilDate.getTime())
+      ? untilDate.toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' })
+      : respondCheck.until
+    return (
+      <main>
+        <div className="tasksHeader">
+          <div>
+            <h1 className="tasksTitle">{locale === 'ru' ? 'Отклики временно заблокированы' : 'Applications temporarily blocked'}</h1>
+            <p className="tasksSubtitle">
+              {locale === 'ru' ? `Вы не можете просматривать заявки и откликаться до ${untilLabel}.` : `You cannot view or apply to tasks until ${untilLabel}.`}
+            </p>
           </div>
         </div>
       </main>
@@ -466,6 +487,7 @@ export function TasksPage() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
+              autoComplete="off"
               placeholder={t('tasks.search.placeholder')}
               className="tasksSearch"
             />
@@ -744,7 +766,8 @@ export function TasksPage() {
                             {t('tasks.due')}: {task.dueDate}
                           </span>
                         ) : null}
-                        <span className="chip">
+                        <span className="chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <Icon name={assignedExecutorsIconName(task.assignedExecutorIds.length)} size={14} />
                           {t('task.meta.assigned')}: {task.assignedExecutorIds.length}/{task.maxExecutors ?? 1}
                         </span>
                       </div>

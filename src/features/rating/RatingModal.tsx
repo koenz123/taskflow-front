@@ -64,6 +64,7 @@ export function RatingModal({ open, title, subjectName, onClose, onSubmit }: Pro
           <textarea
             className="ratingModal__comment"
             placeholder={locale === 'ru' ? 'Комментарий (необязательно)…' : 'Comment (optional)…'}
+            autoComplete="off"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             rows={4}

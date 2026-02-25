@@ -55,6 +55,8 @@ export function LoginPage() {
     } catch (e) {
       if (e instanceof Error && e.message === 'email_not_verified') {
         setFormError(t('auth.emailNotVerified'))
+      } else if (e instanceof Error && e.message === 'arbiter_not_on_server') {
+        setFormError(t('auth.arbiterNotOnServer'))
       } else {
         setFormError(t('auth.invalidCredentials'))
       }

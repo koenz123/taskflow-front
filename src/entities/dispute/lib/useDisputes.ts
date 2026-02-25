@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import type { Dispute } from '../model/dispute'
-import { disputeRepo } from './disputeRepo'
+import { disputeRepo, normalizeDispute } from './disputeRepo'
 import { api } from '@/shared/api/api'
 import { sessionRepo } from '@/shared/auth/sessionRepo'
 
@@ -55,20 +55,48 @@ export async function fetchDisputes() {
     return
   }
   try {
-    const next = await api.get<Dispute[]>('/disputes')
-    if (!sameList(apiSnapshot, next)) apiSnapshot = next
+    const raw = await api.get<unknown>('/disputes')
+    const next: Dispute[] = Array.isArray(raw)
+      ? (raw as unknown[]).map((x) => normalizeDispute(x)).filter((d): d is Dispute => d != null)
+      : []
+    // Use API response as source of truth so that after backend clears data, the list and counters (e.g. dispute badge) update.
+    if (!sameList(apiSnapshot, next)) {
+      apiSnapshot = next
+      notifyApi()
+    }
     apiHasLoaded = true
   } catch {
-    // keep previous
+    // keep previous; do not set apiHasLoaded so refresh can retry
   }
   apiRefreshing = false
-  notifyApi()
 }
 
 export async function refreshDisputes() {
   if (!USE_API) return
   apiHasLoaded = false
   await fetchDisputes()
+}
+
+/** Load a single dispute by ID. Merges into api snapshot (add or update by id) so UI gets fresh status/version. */
+export async function fetchDisputeById(disputeId: string): Promise<Dispute | null> {
+  if (!USE_API || !disputeId?.trim()) return null
+  const token = sessionRepo.getToken()
+  if (!token) return null
+  try {
+    const raw = await api.get<unknown>(`/disputes/${encodeURIComponent(disputeId)}`)
+    const d = normalizeDispute(raw)
+    if (!d) return null
+    const idx = apiSnapshot.findIndex((x) => x.id === d.id)
+    if (idx >= 0) {
+      apiSnapshot = apiSnapshot.slice(0, idx).concat([d], apiSnapshot.slice(idx + 1))
+    } else {
+      apiSnapshot = [...apiSnapshot, d]
+    }
+    notifyApi()
+    return d
+  } catch {
+    return null
+  }
 }
 
 function subscribeApi(cb: () => void) {

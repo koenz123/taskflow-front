@@ -21,6 +21,16 @@ const POLL_MS = 3_000 // обновление списка заданий без
 const LOCAL_META = { loaded: true, refreshing: false }
 let apiMetaSnapshot = { loaded: false, refreshing: false }
 
+function sameTaskList(a: Task[], b: Task[]) {
+  if (a === b) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].id !== b[i].id) return false
+    if (a[i].status !== b[i].status) return false
+  }
+  return true
+}
+
 export async function fetchTasks() {
   if (!USE_API) return
   const token = sessionRepo.getToken()
@@ -40,28 +50,34 @@ export async function fetchTasks() {
     for (const cb of apiStore.subs) cb()
     return
   }
+  let listChanged = false
   try {
     const raw = await api.get<unknown>('/tasks')
     const list = Array.isArray(raw) ? raw : []
-    apiSnapshot = list
+    const next = list
       .map((item) => {
-        // Safety: do not fabricate ids for API tasks — drop malformed items.
         if (!item || typeof item !== 'object') return null
         const id = (item as any).id
         if (typeof id !== 'string' || !id.trim()) return null
         return normalizeTask(item)
       })
       .filter(Boolean) as Task[]
+    if (!sameTaskList(apiSnapshot, next)) {
+      apiSnapshot = next
+      listChanged = true
+    }
     apiHasLoaded = true
   } catch {
     // keep previous snapshot on transient errors
   }
   apiRefreshing = false
-  apiMetaSnapshot =
-    apiMetaSnapshot.loaded === apiHasLoaded && apiMetaSnapshot.refreshing === apiRefreshing
-      ? apiMetaSnapshot
-      : { loaded: apiHasLoaded, refreshing: apiRefreshing }
-  for (const cb of apiStore.subs) cb()
+  const nextMeta = { loaded: apiHasLoaded, refreshing: false }
+  const metaChanged =
+    apiMetaSnapshot.loaded !== nextMeta.loaded || apiMetaSnapshot.refreshing !== nextMeta.refreshing
+  apiMetaSnapshot = metaChanged ? nextMeta : apiMetaSnapshot
+  if (listChanged || metaChanged) {
+    for (const cb of apiStore.subs) cb()
+  }
 }
 
 export async function refreshTasks() {

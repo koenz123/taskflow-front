@@ -8,6 +8,7 @@ import { notificationRepo } from '@/entities/notification/lib/notificationRepo'
 import { useUsers } from '@/entities/user/lib/useUsers'
 import { useTasks } from '@/entities/task/lib/useTasks'
 import { buildNotificationFeedVM } from '@/entities/notification/lib/notificationViewModel'
+import { useVisibleDisputeIds } from '@/entities/dispute/lib/useVisibleDisputeIds'
 import { api } from '@/shared/api/api'
 import {
   markAllNotificationsReadOptimistic,
@@ -42,6 +43,8 @@ export function NotificationsPage() {
     return map
   }, [tasks])
 
+  const visibleDisputeIds = useVisibleDisputeIds()
+
   const list = useMemo(() => {
     if (filter === 'unread') return notifications.filter((n) => !n.readAt)
     return notifications
@@ -55,11 +58,21 @@ export function NotificationsPage() {
         taskById,
         locale,
         t,
+        visibleDisputeIds,
       }),
-    [list, locale, t, taskById, userById],
+    [list, locale, t, taskById, userById, visibleDisputeIds],
   )
 
-  const unreadCount = useMemo(() => notifications.filter((n) => !n.readAt).length, [notifications])
+  const unreadCount = useMemo(
+    () =>
+      notifications.filter((n) => {
+        if (n.readAt) return false
+        if (n.type === 'dispute_opened' || n.type === 'dispute_message')
+          return typeof n.disputeId === 'string' && visibleDisputeIds.has(n.disputeId)
+        return true
+      }).length,
+    [notifications, visibleDisputeIds],
+  )
 
   return (
     <main className="notificationsPage">

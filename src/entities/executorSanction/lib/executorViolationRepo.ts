@@ -46,7 +46,13 @@ function normalize(raw: unknown): ExecutorViolation | null {
   const assignmentId = typeof r.assignmentId === 'string' ? r.assignmentId : ''
   const createdAt = typeof r.createdAt === 'string' ? r.createdAt : nowIso()
   const type: ExecutorViolationType =
-    r.type === 'no_submit_24h' ? 'no_submit_24h' : r.type === 'no_start_12h' ? 'no_start_12h' : 'no_start_12h'
+    r.type === 'no_submit_24h'
+      ? 'no_submit_24h'
+      : r.type === 'no_start_12h'
+        ? 'no_start_12h'
+        : r.type === 'force_majeure_abuse'
+          ? 'force_majeure_abuse'
+          : 'no_start_12h'
   if (!executorId || !taskId || !assignmentId) return null
   return { id, executorId, type, taskId, assignmentId, createdAt }
 }
@@ -137,6 +143,24 @@ export const executorViolationRepo = {
       id: createId('viol'),
       executorId: input.executorId,
       type: 'no_submit_24h',
+      taskId: input.taskId,
+      assignmentId: input.assignmentId,
+      createdAt,
+    }
+    const all = readAll()
+    all.push(v)
+    writeAll(all)
+    return v
+  },
+
+  addForceMajeureAbuse(input: { executorId: string; taskId: string; assignmentId: string; createdAt?: string }): ExecutorViolation {
+    const existing = this.getForAssignment(input.assignmentId, 'force_majeure_abuse')
+    if (existing) return existing
+    const createdAt = input.createdAt && input.createdAt.trim() ? input.createdAt : nowIso()
+    const v: ExecutorViolation = {
+      id: createId('viol'),
+      executorId: input.executorId,
+      type: 'force_majeure_abuse',
       taskId: input.taskId,
       assignmentId: input.assignmentId,
       createdAt,

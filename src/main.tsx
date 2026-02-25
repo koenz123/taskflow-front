@@ -10,11 +10,16 @@ import { initTheme } from '@/shared/theme/theme'
 import { initGlobalErrorHandlers } from '@/shared/logging/initGlobalErrorHandlers'
 import { ErrorBoundary } from '@/shared/logging/ErrorBoundary'
 import { GoogleOAuthProvider } from '@react-oauth/google'
+import { clearAllTaskData } from '@/shared/dev/clearAllTaskData'
 
 // Apply theme before first render to avoid flicker.
 initTheme('dark')
 
 initGlobalErrorHandlers()
+
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  ;(window as unknown as { clearAllTaskData: () => void }).clearAllTaskData = clearAllTaskData
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

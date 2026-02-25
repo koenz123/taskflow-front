@@ -126,6 +126,15 @@
   background: rgb(var(--accent-rgb) / 0.1);
 }
 
+.disputeChatClosed {
+  border-top: 1px solid var(--border2);
+  padding: 12px 14px;
+  background: var(--surface1);
+  color: var(--text);
+  font-size: 14px;
+  opacity: 0.9;
+}
+
 .disputeChatComposer {
   border-top: 1px solid var(--border2);
   padding: 12px;

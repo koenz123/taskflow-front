@@ -1,0 +1,108 @@
+.blockedUsersPage {
+  padding: 24px 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.blockedUsersHeader {
+  margin-bottom: 20px;
+}
+
+.blockedUsersTitle {
+  margin: 0 0 8px;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.blockedUsersIntro {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.blockedUsersSearchWrap {
+  margin-bottom: 20px;
+}
+
+.blockedUsersSearch {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface1);
+  color: var(--text);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.blockedUsersSearch::placeholder {
+  color: var(--muted);
+}
+
+.blockedUsersList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.blockedUsersItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card2);
+}
+
+.blockedUsersItem__info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.blockedUsersItem__name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.blockedUsersItem__email,
+.blockedUsersItem__phone {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.blockedUsersItem__id {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.blockedUsersItem__unblock {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid rgb(var(--accent-rgb));
+  background: transparent;
+  color: rgb(var(--accent-rgb));
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.blockedUsersItem__unblock:hover {
+  background: rgb(var(--accent-rgb) / 0.1);
+}
+
+.blockedUsersEmpty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+}

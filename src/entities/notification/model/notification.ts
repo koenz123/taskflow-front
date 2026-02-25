@@ -25,8 +25,9 @@ export type NotificationType =
   | 'executor_violation_rating_penalty'
   | 'executor_violation_respond_block'
   | 'executor_violation_ban'
+  | 'support_message'
 
-export type ViolationType = 'no_start_12h' | 'no_submit_24h'
+export type ViolationType = 'no_start_12h' | 'no_submit_24h' | 'force_majeure_abuse'
 
 export type Notification = {
   id: string
@@ -37,6 +38,7 @@ export type Notification = {
   taskId: string
   disputeId?: string
   disputeStatus?: string
+  supportThreadId?: string
   /**
    * For SLA threshold notifications (e.g. 12/6/3/2/1 hours left).
    * Stored as the threshold value (hours).

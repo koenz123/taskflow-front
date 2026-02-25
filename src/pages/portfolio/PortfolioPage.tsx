@@ -15,6 +15,7 @@ import type { TranslationKey } from '@/shared/i18n/translations'
 import { AddWorksModal } from '@/features/work/AddWorksModal'
 import './portfolio.css'
 import { StatusPill } from '@/shared/ui/status-pill/StatusPill'
+import { assignedExecutorsIconName, Icon } from '@/shared/ui/icon/Icon'
 import { useContracts } from '@/entities/contract/lib/useContracts'
 import { userIdMatches } from '@/shared/auth/userIdAliases'
 
@@ -664,6 +665,7 @@ export function PortfolioPage() {
                   <input
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
+                    autoComplete="off"
                     placeholder={locale === 'ru' ? 'Название работы' : 'Work title'}
                     style={{
                       width: 'min(560px, 100%)',
@@ -833,6 +835,7 @@ export function PortfolioPage() {
                   <textarea
                     value={editDescription}
                     onChange={(e) => setEditDescription(e.target.value)}
+                    autoComplete="off"
                     placeholder={locale === 'ru' ? 'Описание (необязательно)…' : 'Description (optional)…'}
                     rows={6}
                     style={{
@@ -993,7 +996,10 @@ export function PortfolioPage() {
                             </div>
                           ) : null}
                           <div className="portfolioTasksItem__kvRow">
-                            <span className="portfolioTasksItem__kvKey">{t('task.meta.assigned')}</span>
+                            <span className="portfolioTasksItem__kvKey" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <Icon name={assignedExecutorsIconName(task.assignedExecutorIds.length)} size={14} />
+                              {t('task.meta.assigned')}
+                            </span>
                             <span className="portfolioTasksItem__kvValue">
                               {task.assignedExecutorIds.length}/{task.maxExecutors ?? 1}
                             </span>
