@@ -35,6 +35,7 @@ export type IconName =
   | 'warning'
   | 'chartDown'
   | 'refresh'
+  | 'arrowRight'
 
 export type IconProps = {
   name: IconName
@@ -356,6 +357,13 @@ export function Icon(props: IconProps) {
         <Svg {...common}>
           <path d="M21 12a9 9 0 10-3 6.7" />
           <path d="M21 3v6h-6" />
+        </Svg>
+      )
+    case 'arrowRight':
+      return (
+        <Svg {...common}>
+          <path d="M5 12h14" />
+          <path d="M12 5l7 7-7 7" />
         </Svg>
       )
     default:

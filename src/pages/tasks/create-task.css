@@ -15,6 +15,80 @@
 .createTaskCard .form {
   display: grid;
   gap: 12px;
+  /* Prevent scroll jump when fields resize or dropdowns open */
+  overflow-anchor: none;
+}
+
+.createTaskForm__hint {
+  margin: -4px 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.createTaskForm__section {
+  margin-top: 4px;
+}
+
+.createTaskForm__sectionTitle {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.createTaskForm__sectionSubtitle {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.createTaskForm__collapsibleTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  gap: 8px;
+}
+
+.createTaskForm__collapsibleTitle:hover {
+  opacity: 0.9;
+}
+
+.createTaskForm__collapsibleIcon {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.field__labelWithIcon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.field__labelWithIcon .icon {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.field__textarea--autoExpand {
+  min-height: 2.75em;
+  resize: none;
+  overflow-y: hidden;
+}
+
+.field__textarea--autoExpand.field__textarea {
+  min-height: 2.75em;
 }
 
 .createTaskTitle {
@@ -229,6 +303,7 @@
 .field {
   display: grid;
   gap: 6px;
+  overflow-anchor: none;
 }
 
 .field__label {
@@ -562,6 +637,9 @@
   padding: 12px 14px;
   outline: none;
   resize: vertical;
+  /* Reduce scroll jump when focus moves to field near viewport edge */
+  scroll-margin-top: 80px;
+  scroll-margin-bottom: 80px;
 }
 
 .field__control .field__input {

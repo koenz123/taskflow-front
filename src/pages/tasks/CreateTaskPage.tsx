@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { paths, taskDetailsPath } from '@/app/router/paths'
 import { taskRepo } from '@/entities/task/lib/taskRepo'
@@ -17,12 +17,25 @@ import { createId } from '@/shared/lib/id'
 import { deleteBlob, putBlob } from '@/shared/lib/blobStore'
 import { uploadFileToServer } from '@/shared/api/uploads'
 
+type BriefState = {
+  task: string
+  goal: string
+  message: string
+  audience: string
+}
+
 type FormState = {
   executorMode: 'blogger_ad' | 'customer_post' | 'ai'
   title: string
+  /** Content brief (new structure). */
+  brief: BriefState
+  /** Legacy single description; kept for draft migration. */
   description: string
   /** Temporary input for adding a reference link (not stored in items until user confirms). */
   referenceUrlInput: string
+  /** Format and limitations (collapsible section). */
+  formatDetails: string
+  /** @deprecated use formatDetails */
   formatRequirements: string
   platforms: string[]
   platformVideoCounts: Record<string, string>
@@ -146,16 +159,23 @@ function validate(
   const errors: FormErrors = {}
   const isAi = form.executorMode === 'ai'
   const title = form.title.trim()
-  const desc = form.description.trim()
-  const formatReq = form.formatRequirements.trim()
+  const brief = form.brief
+  const briefTask = (brief?.task ?? '').trim()
+  const briefGoal = (brief?.goal ?? '').trim()
+  const briefMessage = (brief?.message ?? '').trim()
+  const briefAudience = (brief?.audience ?? '').trim()
+  const formatReq = (form.formatDetails ?? form.formatRequirements ?? '').trim()
 
   if (!title) errors.title = t('validation.taskTitleRequired')
   else {
     if (title.length > TITLE_MAX_CHARS) errors.title = t('validation.taskTitleLength')
   }
 
-  if (!desc) errors.description = t('validation.taskFullRequired')
-  else if (desc.length > DESCRIPTION_MAX_CHARS) errors.description = t('validation.taskFullLength')
+  if (!briefTask) errors.description = locale === 'ru' ? 'Опишите, что нужно сделать.' : 'Describe what needs to be done.'
+  else if (!briefGoal) errors.description = locale === 'ru' ? 'Укажите цель.' : 'Specify the goal.'
+  else if (!briefMessage) errors.description = locale === 'ru' ? 'Укажите ключевое сообщение.' : 'Specify the key message.'
+  else if (!briefAudience) errors.description = locale === 'ru' ? 'Укажите целевую аудиторию.' : 'Specify the target audience.'
+  else if (briefTask.length > DESCRIPTION_MAX_CHARS) errors.description = t('validation.taskFullLength')
 
   if (referenceItems.length === 0) {
     errors.referenceUrlInput =
@@ -184,7 +204,8 @@ function validate(
   }
 
   if (formatReq.length > FORMAT_REQUIREMENTS_MAX_CHARS) {
-    errors.formatRequirements = t('validation.taskRequirementsLength')
+    errors.formatDetails = t('validation.taskRequirementsLength')
+    errors.formatRequirements = errors.formatDetails
   }
 
   // Per-platform quantity (defaults to 1)
@@ -266,13 +287,20 @@ export function CreateTaskPage() {
   const platformOptions = TASK_PLATFORM_OPTIONS
   const formatOptions = TASK_FORMAT_OPTIONS
 
+  const emptyBrief: BriefState = useMemo(
+    () => ({ task: '', goal: '', message: '', audience: '' }),
+    [],
+  )
+
   const mapDraft: FormState = useMemo(() => {
     if (!draft) {
       return {
         executorMode: 'customer_post',
         title: '',
+        brief: { ...emptyBrief },
         description: '',
         referenceUrlInput: '',
+        formatDetails: '',
         formatRequirements: '',
         platforms: [],
         platformVideoCounts: {},
@@ -289,12 +317,16 @@ export function CreateTaskPage() {
       if (!d?.platform) continue
       countsFromDraft[d.platform] = String(Math.max(1, Math.floor(d.quantity ?? 1)))
     }
+    const reqText = draft.requirements ? localized(draft.requirements) : ''
+    const descText = localized(draft.description)
     return {
       executorMode: draft.executorMode === 'blogger_ad' || draft.executorMode === 'ai' ? draft.executorMode : 'customer_post',
       title: localized(draft.title),
-      description: localized(draft.description),
+      brief: { ...emptyBrief, task: descText },
+      description: descText,
       referenceUrlInput: '',
-      formatRequirements: draft.requirements ? localized(draft.requirements) : '',
+      formatDetails: reqText,
+      formatRequirements: reqText,
       platforms: splitList(draft.category ?? ''),
       platformVideoCounts: countsFromDraft,
       formats: splitList(draft.location ?? ''),
@@ -303,7 +335,7 @@ export function CreateTaskPage() {
       executionDays: draft.executionDays ? String(Math.min(7, Math.max(1, Math.floor(Number(draft.executionDays)) || 1))) : '1',
       maxExecutors: draft.maxExecutors ? String(draft.maxExecutors) : '',
     }
-  }, [draft, locale])
+  }, [draft, locale, emptyBrief])
 
   const [form, setForm] = useState<FormState>(() => ({ ...mapDraft, referenceUrlInput: '' }))
   const [touched, setTouched] = useState<Partial<Record<keyof FormState, boolean>>>({})
@@ -314,8 +346,6 @@ export function CreateTaskPage() {
     if (fromNew && fromNew.length) return fromNew
     return draft?.descriptionFile ? [draft.descriptionFile] : []
   })
-  const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const [fileBusy, setFileBusy] = useState(false)
   const [descriptionLimitOpen, setDescriptionLimitOpen] = useState(false)
   const [openHelpId, setOpenHelpId] = useState<string | null>(null)
   const [openExecutionDaysDropdown, setOpenExecutionDaysDropdown] = useState(false)
@@ -323,6 +353,9 @@ export function CreateTaskPage() {
   const [referenceItems, setReferenceItems] = useState<ReferenceItem[]>(() => draftReferenceToItems(draft?.reference))
   const [referenceAddLinkError, setReferenceAddLinkError] = useState<string | null>(null)
   const referenceFileInputRef = useRef<HTMLInputElement | null>(null)
+  const referenceUrlTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const maxExecutorsTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const [maxExecutorsDropdownStyle, setMaxExecutorsDropdownStyle] = useState<React.CSSProperties | null>(null)
   const [referenceBusy, setReferenceBusy] = useState(false)
   const [referenceLimitOpen, setReferenceLimitOpen] = useState(false)
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false)
@@ -339,6 +372,13 @@ export function CreateTaskPage() {
       localStorage.removeItem(storageKey)
     } catch {}
   }, [storageKey])
+
+  const resizeTextareaPreserveScroll = useCallback((el: HTMLTextAreaElement) => {
+    const scrollY = window.scrollY
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+    if (window.scrollY !== scrollY) window.scrollTo(window.scrollX, scrollY)
+  }, [])
 
   useEffect(() => {
     const fromNew = Array.isArray(draft?.descriptionFiles) ? (draft?.descriptionFiles ?? []).slice(0, MAX_DESCRIPTION_FILES) : null
@@ -390,10 +430,15 @@ export function CreateTaskPage() {
 
   const hasUnsavedInput = useMemo(() => {
     if (form.title.trim()) return true
+    const b = form.brief
+    if ((b?.task ?? '').trim()) return true
+    if ((b?.goal ?? '').trim()) return true
+    if ((b?.message ?? '').trim()) return true
+    if ((b?.audience ?? '').trim()) return true
     if (form.description.trim()) return true
     if (referenceItems.length) return true
     if (descriptionFiles.length) return true
-    if (form.formatRequirements.trim()) return true
+    if ((form.formatDetails ?? form.formatRequirements ?? '').trim()) return true
     if (form.platforms.length) return true
     if (Object.keys(form.platformVideoCounts ?? {}).some((k) => (form.platformVideoCounts[k] ?? '').trim())) return true
     if (form.formats.length) return true
@@ -446,6 +491,38 @@ export function CreateTaskPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [descriptionLimitOpen])
 
+  useEffect(() => {
+    const el = referenceUrlTextareaRef.current
+    if (el && !form.referenceUrlInput) resizeTextareaPreserveScroll(el)
+  }, [form.referenceUrlInput, resizeTextareaPreserveScroll])
+
+  useLayoutEffect(() => {
+    if (!openMaxExecutorsDropdown) {
+      setMaxExecutorsDropdownStyle(null)
+      return
+    }
+    const syncPosition = () => {
+      const rect = maxExecutorsTriggerRef.current?.getBoundingClientRect()
+      if (!rect) return
+      setMaxExecutorsDropdownStyle({
+        position: 'fixed',
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+        minWidth: rect.width,
+        maxHeight: Math.max(80, window.innerHeight - rect.bottom - 16),
+        zIndex: 50,
+      })
+    }
+    syncPosition()
+    window.addEventListener('scroll', syncPosition, { passive: true, capture: true })
+    window.addEventListener('resize', syncPosition)
+    return () => {
+      window.removeEventListener('scroll', syncPosition, { capture: true } as unknown as AddEventListenerOptions)
+      window.removeEventListener('resize', syncPosition)
+    }
+  }, [openMaxExecutorsDropdown])
+
   const errors = useMemo(() => validate(form, referenceItems, locale, t), [form, referenceItems, locale, t])
   const isValid = Object.keys(errors).length === 0
 
@@ -456,8 +533,8 @@ export function CreateTaskPage() {
       ) as FormErrors)
 
   const titleChars = form.title.length
-  const descChars = form.description.length
-  const formatReqChars = form.formatRequirements.length
+  const brief = form.brief ?? emptyBrief
+  const formatReqChars = (form.formatDetails ?? form.formatRequirements ?? '').length
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -496,15 +573,25 @@ export function CreateTaskPage() {
     dueDateD.setDate(dueDateD.getDate() + executionDaysValue)
     const dueDate = dueDateD.toISOString().slice(0, 10)
 
+    const briefText = (() => {
+      const b = form.brief ?? emptyBrief
+      const parts: string[] = []
+      if ((b.task ?? '').trim()) parts.push((locale === 'ru' ? 'Что нужно сделать: ' : 'What to do: ') + b.task.trim())
+      if ((b.goal ?? '').trim()) parts.push((locale === 'ru' ? 'Цель: ' : 'Goal: ') + b.goal.trim())
+      if ((b.message ?? '').trim()) parts.push((locale === 'ru' ? 'Ключевое сообщение: ' : 'Key message: ') + b.message.trim())
+      if ((b.audience ?? '').trim()) parts.push((locale === 'ru' ? 'Целевая аудитория: ' : 'Target audience: ') + b.audience.trim())
+      return parts.join('\n\n')
+    })()
+    const descriptionText = briefText || form.description.trim()
+    const requirementsText = (form.formatDetails ?? form.formatRequirements ?? '').trim()
+
     const nextData = {
       executorMode: form.executorMode,
       deliverables: deliverables.length ? deliverables : undefined,
       title: toLocalizedText(form.title.trim(), locale),
-      shortDescription: toShortText(form.description, locale),
-      requirements: form.formatRequirements.trim()
-        ? toLocalizedText(form.formatRequirements.trim(), locale)
-        : undefined,
-      description: toLocalizedText(form.description.trim(), locale),
+      shortDescription: toShortText(descriptionText || form.description, locale),
+      requirements: requirementsText ? toLocalizedText(requirementsText, locale) : undefined,
+      description: toLocalizedText(descriptionText || form.description.trim(), locale),
       descriptionFiles: descriptionFiles.length ? descriptionFiles.map((f) => ({ ...f })) : undefined,
       // Backward compatibility (legacy single file).
       descriptionFile: descriptionFiles.length ? { ...descriptionFiles[0] } : undefined,
@@ -805,158 +892,161 @@ export function CreateTaskPage() {
             {visibleErrors.title ? <span className="field__error">{visibleErrors.title}</span> : null}
           </label>
 
-          <label className="field">
+          <p className="createTaskForm__hint">
+            {locale === 'ru'
+              ? 'Сначала опишите смысл задачи — затем укажите технические детали'
+              : 'First describe the meaning of the task — then specify the technical details'}
+          </p>
+
+          <section className="createTaskForm__section field">
             <span className="field__labelRow">
               <HelpTip
-                triggerLabel={<span className="field__label">{locale === 'ru' ? 'Описание' : 'Description'}</span>}
-                open={openHelpId === 'description'}
-                onToggle={() => setOpenHelpId((v) => (v === 'description' ? null : 'description'))}
+                triggerLabel={<h3 className="createTaskForm__sectionTitle">{locale === 'ru' ? 'Контент-бриф' : 'Content brief'}</h3>}
+                open={openHelpId === 'contentBrief'}
+                onToggle={() => setOpenHelpId((v) => (v === 'contentBrief' ? null : 'contentBrief'))}
                 onClose={() => setOpenHelpId(null)}
-                ariaLabel={locale === 'ru' ? 'Подсказка: описание' : 'Help: description'}
+                ariaLabel={locale === 'ru' ? 'Подсказка: контент-бриф' : 'Help: content brief'}
                 content={
                   locale === 'ru'
                     ? [
-                        'Описание — это главный бриф. Здесь исполнитель должен понять задачу “от и до”.',
+                        'Контент-бриф — это смысл задачи для исполнителя. Заполните по шагам: что нужно сделать, какая цель, какое сообщение донести и для кого контент.',
                         '',
-                        'Что важно описать (коротко и по пунктам):',
-                        '1) Контекст: продукт/услуга и для кого (ЦА).',
-                        '2) Цель: что должно измениться после просмотра.',
-                        '3) Ключевые тезисы: 1–2 мысли, которые обязательно должны прозвучать.',
-                        '4) План: хук → основная часть → CTA (что сделать зрителю).',
-                        '5) Ограничения: что нельзя упоминать/показывать, обязательные фразы.',
-                        '',
-                        'Важно:',
-                        '- Описание ограничено 1000 символами. Если деталей много — прикрепите .txt файл.',
+                        'Зачем по полям: исполнитель сразу видит структуру и не упускает важное. Референсы и формат/ограничения задайте отдельно ниже.',
                       ].join('\n')
                     : [
-                        'Description is your main brief. A contractor should understand the task end-to-end from it.',
+                        'Content brief is the meaning of the task for the executor. Fill in step by step: what to do, the goal, the key message, and who the content is for.',
                         '',
-                        'What to include (bullet points):',
-                        '1) Context (product/service, audience).',
-                        '2) Goal (what outcome you want).',
-                        '3) Key message (1–2 must-have points).',
-                        '4) Outline (hook → body → CTA).',
-                        '5) Constraints (do/don’t, mandatory mentions).',
-                        '',
-                        'Limit: 1000 characters. If you have a lot of details — attach a .txt file.',
+                        'Why separate fields: the executor sees the structure and won’t miss important points. Add references and format/limitations below.',
                       ].join('\n')
                 }
               />
             </span>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".txt,text/plain"
-              className="field__fileInputHidden"
-              onChange={(e) => {
-                const files = Array.from(e.currentTarget.files ?? [])
-                e.currentTarget.value = ''
-                if (!files.length) return
+            <p className="createTaskForm__sectionSubtitle">
+              {locale === 'ru'
+                ? 'Помогает исполнителю понять смысл задачи'
+                : 'Helps the executor understand the meaning of the task'}
+            </p>
 
-                const remaining = Math.max(0, MAX_DESCRIPTION_FILES - descriptionFiles.length)
-                if (remaining <= 0) {
-                  setDescriptionLimitOpen(true)
-                  return
-                }
+            <label className="field" style={{ display: 'block', marginTop: 8 }}>
+              <span className="field__labelRow">
+                <span className="field__label">{locale === 'ru' ? 'Что нужно сделать' : 'What to do'}</span>
+              </span>
+              <div className="field__control">
+                <textarea
+                  className="field__textarea field__textarea--autoExpand"
+                  rows={1}
+                  value={brief.task}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setForm((prev) => ({
+                      ...prev,
+                      brief: { ...(prev.brief ?? emptyBrief), task: v },
+                    }))
+                    resizeTextareaPreserveScroll(e.target)
+                  }}
+                  onBlur={() => setTouched((t) => ({ ...t, description: true }))}
+                  placeholder={
+                    locale === 'ru'
+                      ? 'Опишите задачу простыми словами (например: снять обзор, рассказать о продукте)'
+                      : 'Describe the task in simple words (e.g. shoot a review, tell about the product)'}
+                  autoComplete="off"
+                  ref={(el) => { if (el) resizeTextareaPreserveScroll(el) }}
+                />
+              </div>
+            </label>
 
-                const toAdd = files.slice(0, remaining)
-                if (files.length > remaining) setDescriptionLimitOpen(true)
-
-                setFileBusy(true)
-                void (async () => {
-                  try {
-                    const items = await Promise.all(toAdd.map(async (file) => ({ name: file.name, text: await file.text() })))
-                    setDescriptionFiles((prev) => [...prev, ...items].slice(0, MAX_DESCRIPTION_FILES))
-                  } finally {
-                    setFileBusy(false)
-                  }
-                })()
-              }}
-              multiple
-            />
-
-            <div className="field__control field__control--textarea">
-              <textarea
-                className="field__textarea"
-                value={form.description}
-                autoComplete="off"
-                onChange={(e) => setField('description', e.target.value)}
-                onBlur={() => setTouched((t) => ({ ...t, description: true }))}
-                placeholder={locale === 'ru' ? 'Опишите задачу для исполнителя…' : 'Describe the task for the contractor…'}
-                rows={7}
-              />
-              <div className="field__bottomRight">
-                <span className={`field__counterInField ${descChars >= DESCRIPTION_MAX_CHARS ? 'field__counter--danger' : ''}`}>
-                  {descChars}/{DESCRIPTION_MAX_CHARS}
+            {brief.task.trim().length > 0 && (
+              <label className="field" style={{ display: 'block', marginTop: 8 }}>
+                <span className="field__labelRow">
+                  <span className="field__label">{locale === 'ru' ? 'Цель' : 'Goal'}</span>
                 </span>
-              </div>
-            </div>
-
-            <div className="referenceActionsRow">
-              <button
-                type="button"
-                className={`field__refBtn field__refBtn--full${
-                  descriptionFiles.length >= MAX_DESCRIPTION_FILES ? ' field__refBtn--inactive' : ''
-                }`}
-                onClick={() => {
-                  if (fileBusy) return
-                  if (descriptionFiles.length >= MAX_DESCRIPTION_FILES) {
-                    setDescriptionLimitOpen(true)
-                    return
-                  }
-                  fileInputRef.current?.click()
-                }}
-                disabled={fileBusy}
-                aria-disabled={descriptionFiles.length >= MAX_DESCRIPTION_FILES}
-              >
-                {fileBusy
-                  ? locale === 'ru'
-                    ? 'Загрузка…'
-                    : 'Loading…'
-                  : locale === 'ru'
-                    ? 'Прикрепить файл'
-                    : 'Attach file'}
-              </button>
-            </div>
-
-            {descriptionFiles.length ? (
-              <div className="deliverablesBox" style={{ marginTop: 10 }}>
-                <div className="deliverablesList" style={{ maxHeight: 'none' }}>
-                  {descriptionFiles.map((f, idx) => (
-                    <div key={`${f.name}-${idx}`} className={`deliverablesRow${idx === 0 ? ' deliverablesRow--first' : ''}`}>
-                      <span className="deliverablesRow__platform" title={f.name}>
-                        {f.name}
-                      </span>
-                      <div className="deliverablesRow__controls">
-                        <button
-                          type="button"
-                          className="deliverablesRow__btn"
-                          aria-label={locale === 'ru' ? `Удалить файл: ${f.name}` : `Remove file: ${f.name}`}
-                          onPointerDown={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                          }}
-                          onClick={(e) => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            setDescriptionFiles((prev) => prev.filter((_, i) => i !== idx))
-                          }}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                <div className="field__control">
+                  <textarea
+                    className="field__textarea field__textarea--autoExpand"
+                    rows={1}
+                    value={brief.goal}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setForm((prev) => ({
+                        ...prev,
+                        brief: { ...(prev.brief ?? emptyBrief), goal: v },
+                      }))
+                      resizeTextareaPreserveScroll(e.target)
+                    }}
+                    placeholder={
+                      locale === 'ru'
+                        ? 'Какой результат должен быть после просмотра? (например: привлечь внимание, объяснить пользу)'
+                        : 'What result should there be after watching? (e.g. attract attention, explain the benefit)'}
+                    autoComplete="off"
+                    ref={(el) => { if (el) resizeTextareaPreserveScroll(el) }}
+                  />
                 </div>
-              </div>
-            ) : null}
+              </label>
+            )}
+
+            {brief.goal.trim().length > 0 && (
+              <label className="field" style={{ display: 'block', marginTop: 8 }}>
+                <span className="field__labelRow">
+                  <span className="field__label">{locale === 'ru' ? 'Ключевое сообщение' : 'Key message'}</span>
+                </span>
+                <div className="field__control">
+                  <textarea
+                    className="field__textarea field__textarea--autoExpand"
+                    rows={1}
+                    value={brief.message}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setForm((prev) => ({
+                        ...prev,
+                        brief: { ...(prev.brief ?? emptyBrief), message: v },
+                      }))
+                      resizeTextareaPreserveScroll(e.target)
+                    }}
+                    placeholder={
+                      locale === 'ru'
+                        ? 'Главная мысль, которую нужно донести'
+                        : 'The main idea to convey'}
+                    autoComplete="off"
+                    ref={(el) => { if (el) resizeTextareaPreserveScroll(el) }}
+                  />
+                </div>
+              </label>
+            )}
+
+            {brief.message.trim().length > 0 && (
+              <label className="field" style={{ display: 'block', marginTop: 8 }}>
+                <span className="field__labelRow">
+                  <span className="field__label">{locale === 'ru' ? 'Целевая аудитория' : 'Target audience'}</span>
+                </span>
+                <div className="field__control">
+                  <textarea
+                    className="field__textarea field__textarea--autoExpand"
+                    rows={1}
+                    value={brief.audience}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setForm((prev) => ({
+                        ...prev,
+                        brief: { ...(prev.brief ?? emptyBrief), audience: v },
+                      }))
+                      resizeTextareaPreserveScroll(e.target)
+                    }}
+                    placeholder={locale === 'ru' ? 'Для кого этот контент?' : 'Who is this content for?'}
+                    autoComplete="off"
+                    ref={(el) => { if (el) resizeTextareaPreserveScroll(el) }}
+                  />
+                </div>
+              </label>
+            )}
+
             {visibleErrors.description ? <span className="field__error">{visibleErrors.description}</span> : null}
-          </label>
+          </section>
+
 
           <label className="field">
             <span className="field__labelRow">
               <HelpTip
-                triggerLabel={<span className="field__label">{locale === 'ru' ? 'Референс' : 'Reference'}</span>}
+                triggerLabel={<span className="field__label">{locale === 'ru' ? 'Примеры / референсы' : 'Examples / references'}</span>}
                 open={openHelpId === 'reference'}
                 onToggle={() => setOpenHelpId((v) => (v === 'reference' ? null : 'reference'))}
                 onClose={() => setOpenHelpId(null)}
@@ -998,12 +1088,18 @@ export function CreateTaskPage() {
             </span>
 
             <div className="referenceActionsRow referenceActionsRow--withInput">
-              <input
-                className="field__input referenceLinkInput"
+              <textarea
+                className="field__textarea field__textarea--autoExpand referenceLinkInput"
+                rows={1}
                 value={form.referenceUrlInput}
                 onChange={(e) => {
                   setReferenceAddLinkError(null)
                   setField('referenceUrlInput', e.target.value)
+                  resizeTextareaPreserveScroll(e.target)
+                }}
+                ref={(el) => {
+                  referenceUrlTextareaRef.current = el
+                  if (el) resizeTextareaPreserveScroll(el)
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
@@ -1035,7 +1131,7 @@ export function CreateTaskPage() {
                     setReferenceAddLinkError(null)
                   }
                 }}
-                placeholder={locale === 'ru' ? 'Вставьте ссылку на референс…' : 'Paste a reference link…'}
+                placeholder={locale === 'ru' ? 'Добавьте ссылки на примеры желаемого контента' : 'Add links to examples of desired content'}
                 autoComplete="off"
               />
               <button
@@ -1341,34 +1437,22 @@ export function CreateTaskPage() {
           <label className="field">
             <span className="field__labelRow">
               <HelpTip
-                triggerLabel={<span className="field__label">{locale === 'ru' ? 'Технические требования' : 'Technical requirements'}</span>}
-                open={openHelpId === 'formatReq'}
-                onToggle={() => setOpenHelpId((v) => (v === 'formatReq' ? null : 'formatReq'))}
+                triggerLabel={<span className="field__label">{locale === 'ru' ? 'Формат и ограничения' : 'Format and limitations'}</span>}
+                open={openHelpId === 'formatDetails'}
+                onToggle={() => setOpenHelpId((v) => (v === 'formatDetails' ? null : 'formatDetails'))}
                 onClose={() => setOpenHelpId(null)}
-                ariaLabel={locale === 'ru' ? 'Подсказка: технические требования' : 'Help: technical requirements'}
+                ariaLabel={locale === 'ru' ? 'Подсказка: формат и ограничения' : 'Help: format and limitations'}
                 content={
                   locale === 'ru'
                     ? [
-                        'Технические требования — это технические и визуальные параметры результата. Здесь лучше писать конкретику, чтобы не было “сюрпризов” при сдаче.',
+                        'Формат и ограничения — технические и визуальные параметры результата. Укажите длительность, язык, стиль, обязательные условия.',
                         '',
-                        'Что обычно указывают:',
-                        '- Длительность: например 20–30 сек, 30–45 сек.',
-                        '- Озвучка: нужна/не нужна, язык, темп, тон (дружелюбно/экспертно).',
-                        '- Музыка: можно/нельзя, громкость относительно голоса.',
-                        '- Качество: минимум 1080×1920, 30fps (если важно).',
-                        '- Формат сдачи: MP4/MOV, ссылка, исходники (по желанию).',
-                        'Лимит поля — 500 символов. Самое важное — в начале.',
+                        'Что обычно указывают: длительность (20–30 сек), озвучка (нужна/язык/тон), качество (разрешение, fps), формат сдачи. Лимит — 500 символов.',
                       ].join('\n')
                     : [
-                        'Technical requirements are the technical and visual constraints of the deliverable. Be specific to avoid surprises.',
+                        'Format and limitations are the technical and visual constraints of the deliverable. Specify duration, language, style, and mandatory requirements.',
                         '',
-                        'Common items:',
-                        '- Duration (e.g. 20–30s)',
-                        '- Voiceover (yes/no, language, tone)',
-                        '- Quality (1080×1920, fps)',
-                        '- Delivery format (MP4/MOV, sources if needed)',
-                        '',
-                        'Limit: 500 characters.',
+                        'Common items: duration (20–30s), voiceover (yes/no, language, tone), quality (resolution, fps), delivery format. Limit: 500 characters.',
                       ].join('\n')
                 }
               />
@@ -1376,15 +1460,17 @@ export function CreateTaskPage() {
             <div className="field__control field__control--textarea">
               <textarea
                 className="field__textarea"
-                value={form.formatRequirements}
+                value={form.formatDetails || form.formatRequirements}
                 autoComplete="off"
-                onChange={(e) => setField('formatRequirements', e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setForm((prev) => ({ ...prev, formatDetails: v, formatRequirements: v }))
+                }}
                 onBlur={() => setTouched((t) => ({ ...t, formatRequirements: true }))}
                 placeholder={
                   locale === 'ru'
-                    ? 'Например: длина 20–30 сек, озвучка нужна (RU), качество 1080p…'
-                    : 'E.g. 20–30s, voiceover needed (EN), 1080p…'
-                }
+                    ? 'Длительность, язык, стиль, обязательные условия'
+                    : 'Duration, language, style, mandatory requirements'}
                 rows={4}
               />
               <span
@@ -1393,10 +1479,11 @@ export function CreateTaskPage() {
                 {formatReqChars}/{FORMAT_REQUIREMENTS_MAX_CHARS}
               </span>
             </div>
-            {visibleErrors.formatRequirements ? (
-              <span className="field__error">{visibleErrors.formatRequirements}</span>
+            {(visibleErrors.formatRequirements || visibleErrors.formatDetails) ? (
+              <span className="field__error">{visibleErrors.formatDetails ?? visibleErrors.formatRequirements}</span>
             ) : null}
           </label>
+
 
           <div className="grid2">
             <MultiSelect
@@ -1725,6 +1812,7 @@ export function CreateTaskPage() {
                     <button
                       type="button"
                       className="createTaskNumberSelect__trigger"
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={() => setOpenExecutionDaysDropdown((v) => !v)}
                       aria-haspopup="listbox"
                       aria-expanded={openExecutionDaysDropdown}
@@ -1798,7 +1886,9 @@ export function CreateTaskPage() {
                     />
                     <button
                       type="button"
+                      ref={maxExecutorsTriggerRef}
                       className="createTaskNumberSelect__trigger"
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={() => setOpenMaxExecutorsDropdown((v) => !v)}
                       aria-haspopup="listbox"
                       aria-expanded={openMaxExecutorsDropdown}
@@ -1806,11 +1896,11 @@ export function CreateTaskPage() {
                     >
                       ▾
                     </button>
-                    {openMaxExecutorsDropdown ? (
+                    {openMaxExecutorsDropdown && maxExecutorsDropdownStyle ? (
                       <ul
                         className="customSelectDropdown createTaskNumberSelect__dropdown"
                         role="listbox"
-                        style={{ position: 'absolute', left: 0, right: 0, top: '100%', marginTop: 4, zIndex: 50 }}
+                        style={maxExecutorsDropdownStyle}
                       >
                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
                           <li key={n} role="option" aria-selected={form.maxExecutors === String(n)}>
